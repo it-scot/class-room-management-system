@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ──────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isScotUser() {
+      return isSignedIn() &&
+             request.auth.token.email != null &&
+             request.auth.token.email.matches('.*@scot\\.lk');
+    }
+    function isAdmin() {
+      return isScotUser() &&
+             (
+               request.auth.token.email == 'shanaka@scot.lk' ||
+               request.auth.token.email == 'menura@scot.lk' ||
+               request.auth.token.email == 'yohan@scot.lk' ||
+               request.auth.token.email == 'disitha@scot.lk' ||
+               request.auth.token.email == 'ishan.madhuranga@scot.lk' ||
+               exists(/databases/$(database)/documents/admins/$(request.auth.token.email))
+             );
+    }
+    function isOwner(userId) {
+      return isScotUser() && request.auth.uid == userId;
+    }
+
+    // ─── Users ────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read:   if isScotUser();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Bookings ─────────────────────────────────────────────────────────
+    match /bookings/{bookingId} {
+      allow read:   if isScotUser();
+      allow create: if isScotUser() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.status == 'Approved';
+      // Only admins can update status; users cannot change status themselves
+      allow update: if isAdmin();
+      // User can delete own Approved booking; admin can delete any
+      allow delete: if (isOwner(resource.data.userId) && (resource.data.status == 'Approved' || resource.data.status == 'Pending'))
+                    || isAdmin();
+    }
+
+    // ─── Room Locks (Concurrency) ─────────────────────────────────────────
+    match /room_locks/{lockId} {
+      allow read, write: if isScotUser();
+    }
+
+    // ─── Admins ───────────────────────────────────────────────────────────
+    match /admins/{email} {
+      allow read:   if isScotUser();
+      allow write:  if isAdmin();
+    }
+
+    // ─── Settings ─────────────────────────────────────────────────────────
+    match /settings/{document=**} {
+      allow read:   if true; // Anyone can read portalConfig to know if it's locked
+      allow write:  if isAdmin();
+    }
+  }
+}

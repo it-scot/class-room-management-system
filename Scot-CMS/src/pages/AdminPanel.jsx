@@ -1,0 +1,454 @@
+// src/pages/AdminPanel.jsx
+// Admin panel: view all bookings, approve/reject with status toggle.
+
+import React, { useState, useMemo } from 'react';
+import { useBookings }         from '../hooks/useBookings';
+import { updateBookingStatus } from '../services/bookingService';
+import { sendStatusUpdateEmail } from '../services/emailService';
+import { updateSheetStatus }     from '../services/sheetsService';
+import Badge   from '../components/common/Badge';
+import Spinner from '../components/common/Spinner';
+import Modal from '../components/common/Modal';
+import EmptyState from '../components/common/EmptyState';
+import { formatDate, formatTimestamp } from '../utils/dateHelpers';
+import { BOOKING_STATUS }      from '../utils/constants';
+import { usePortal } from '../store/PortalContext';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import {
+  FunnelIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  MagnifyingGlassIcon,
+  ShieldCheckIcon,
+  ArrowDownTrayIcon,
+  CogIcon,
+} from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
+
+const STATUS_FILTERS = ['All', BOOKING_STATUS.PENDING, BOOKING_STATUS.APPROVED, BOOKING_STATUS.REJECTED];
+
+const AdminPanel = () => {
+  const { bookings, loading } = useBookings(true); // fetch all
+  const { portalConfig, isPortalOpen } = usePortal();
+  const [filter,    setFilter]    = useState('All');
+  const [search,    setSearch]    = useState('');
+  const [dateFrom,  setDateFrom]  = useState('');
+  const [dateTo,    setDateTo]    = useState('');
+  const [updating,  setUpdating]  = useState({});   // { bookingId: true }
+  
+  // Modal state
+  const [actionModal, setActionModal] = useState({ isOpen: false, bookingId: null, status: null });
+  const [adminReason, setAdminReason] = useState('');
+
+  const filtered = useMemo(() => {
+    let list = bookings;
+    if (filter !== 'All') list = list.filter(b => b.status === filter);
+    // Date-range filter — inclusive on both ends
+    if (dateFrom) list = list.filter(b => b.date >= dateFrom);
+    if (dateTo)   list = list.filter(b => b.date <= dateTo);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(b =>
+        (b.room            || '').toLowerCase().includes(q) ||
+        (b.userName        || '').toLowerCase().includes(q) ||
+        (b.userEmail       || '').toLowerCase().includes(q) ||
+        (b.supervisorEmail || '').toLowerCase().includes(q) ||
+        (b.building        || '').toLowerCase().includes(q) ||
+        (b.reason          || '').toLowerCase().includes(q) ||
+        (b.programmeName   || '').toLowerCase().includes(q) ||
+        (b.department      || '').toLowerCase().includes(q) ||
+        (b.generatorReason || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [bookings, filter, search, dateFrom, dateTo]);
+
+  const handleDownloadCSV = () => {
+    if (filtered.length === 0) return toast.error('No records to download');
+    
+    const headers = ['Booked By', 'Email', 'Building', 'Room', 'Department', 'Programme', 'Generator Required', 'Generator Reason', 'Extension Cord', 'Monitor', 'Date', 'Start', 'End', 'Seats', 'Status', 'Reason', 'Admin Reason'];
+    const rows = filtered.map(b => [
+      `"${b.userName || b.userEmail}"`,
+      `"${b.userEmail}"`,
+      `"${b.building}"`,
+      `"${b.room}"`,
+      `"${b.department || ''}"`,
+      `"${b.programmeName || ''}"`,
+      `"${b.generatorRequired ? 'Yes' : 'No'}"`,
+      `"${b.generatorReason || ''}"`,
+      `"${b.extensionCordRequired ? 'Yes' : 'No'}"`,
+      `"${b.monitorRequired ? 'Yes' : 'No'}"`,
+      `"${b.date}"`,
+      `"${b.startTime}"`,
+      `"${b.endTime}"`,
+      b.seats,
+      `"${b.status}"`,
+      `"${(b.reason || '').replace(/"/g, '""')}"`,
+      `"${(b.adminReason || '').replace(/"/g, '""')}"`
+    ]);
+    
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const rangeLabel = dateFrom || dateTo
+      ? `_${dateFrom || 'start'}_to_${dateTo || 'end'}`
+      : `_all_${new Date().toISOString().split('T')[0]}`;
+    link.setAttribute('download', `bookings_export${rangeLabel}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url); // prevent memory leak
+  };
+
+  const executeStatusUpdate = async () => {
+    const { bookingId, status } = actionModal;
+    if (!bookingId) return;
+
+    setUpdating(u => ({ ...u, [bookingId]: true }));
+    setActionModal({ isOpen: false, bookingId: null, status: null });
+    
+    try {
+      await updateBookingStatus(bookingId, status, adminReason);
+      
+      const booking = bookings.find(b => b.id === bookingId);
+      if (booking) {
+        sendStatusUpdateEmail({ ...booking, status, adminReason });
+        updateSheetStatus(bookingId, status);
+      }
+
+      toast.success(`Booking ${status.toLowerCase()} successfully.`);
+    } catch {
+      toast.error('Failed to update status. Please try again.');
+    } finally {
+      setUpdating(u => { const n = { ...u }; delete n[bookingId]; return n; });
+      setAdminReason('');
+    }
+  };
+
+  const confirmAction = (bookingId, status) => {
+    setActionModal({ isOpen: true, bookingId, status });
+    setAdminReason('');
+  };
+
+  const toggleManualOverride = async () => {
+    if (!portalConfig) return;
+    const configRef = doc(db, 'settings', 'portalConfig');
+    await setDoc(configRef, {
+      ...portalConfig,
+      isManualOverride: !portalConfig.isManualOverride
+    });
+    toast.success(`Manual override ${!portalConfig.isManualOverride ? 'enabled' : 'disabled'}`);
+  };
+
+  const setManualStatus = async (status) => {
+    if (!portalConfig) return;
+    const configRef = doc(db, 'settings', 'portalConfig');
+    await setDoc(configRef, {
+      ...portalConfig,
+      manualStatus: status
+    });
+    toast.success(`Portal forced to ${status}`);
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6 sm:mb-8">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-accent-500/15 flex items-center justify-center shrink-0">
+            <ShieldCheckIcon className="w-4 h-4 sm:w-5 sm:h-5 text-accent-400" />
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Admin Panel</h1>
+            <p className="text-slate-400 text-xs sm:text-sm">Manage all room booking requests.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="badge bg-accent-500/20 text-accent-400 border border-accent-500/30 text-xs sm:text-sm px-2.5 py-1 sm:px-3 sm:py-1.5">
+            {bookings.length} total
+          </div>
+          <button onClick={handleDownloadCSV} className="btn-secondary btn-sm flex items-center gap-2">
+            <ArrowDownTrayIcon className="w-4 h-4" />
+            <span className="hidden xs:inline">Download</span> CSV
+          </button>
+        </div>
+      </div>
+
+      {/* Portal Settings Control */}
+      {portalConfig && (
+        <div className="glass p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-white/10 rounded-xl">
+          <div className="flex items-center gap-3">
+            <CogIcon className="w-5 h-5 text-slate-400" />
+            <div>
+              <p className="text-sm font-semibold text-white">Portal Booking Status</p>
+              <p className="text-xs text-slate-400">Currently: <strong className={isPortalOpen ? 'text-emerald-400' : 'text-red-400'}>{isPortalOpen ? 'OPEN' : 'FROZEN'}</strong></p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!portalConfig.isManualOverride} onChange={toggleManualOverride} className="w-4 h-4 rounded border-white/20 bg-white/5 accent-primary-500" />
+              <span className="text-sm text-slate-300">Auto Schedule (Sun-Thu)</span>
+            </label>
+            
+            {portalConfig.isManualOverride && (
+              <div className="flex gap-2">
+                <button onClick={() => setManualStatus('OPEN')} className={`btn-sm ${portalConfig.manualStatus === 'OPEN' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-surface-800 text-slate-400 hover:bg-surface-700'}`}>Force Open</button>
+                <button onClick={() => setManualStatus('CLOSED')} className={`btn-sm ${portalConfig.manualStatus === 'CLOSED' ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-surface-800 text-slate-400 hover:bg-surface-700'}`}>Force Close</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="glass-dark p-3 sm:p-4 mb-4 sm:mb-6 flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="relative flex-1">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              id="admin-search"
+              type="search"
+              placeholder="Search by room, user, reason…"
+              className="input pl-9"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          {/* Date Range Filter */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <div className="relative flex-1 sm:flex-none">
+              <label className="absolute -top-2 left-3 text-[10px] font-semibold text-slate-500 uppercase tracking-wider bg-[#0f172a] px-1">
+                From
+              </label>
+              <input
+                id="date-from"
+                type="date"
+                className="input w-full sm:w-auto pt-3"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={e => setDateFrom(e.target.value)}
+              />
+            </div>
+            <span className="text-slate-500 text-sm hidden sm:block">→</span>
+            <div className="relative flex-1 sm:flex-none">
+              <label className="absolute -top-2 left-3 text-[10px] font-semibold text-slate-500 uppercase tracking-wider bg-[#0f172a] px-1">
+                To
+              </label>
+              <input
+                id="date-to"
+                type="date"
+                className="input w-full sm:w-auto pt-3"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={e => setDateTo(e.target.value)}
+              />
+            </div>
+            {(dateFrom || dateTo) && (
+              <button
+                id="clear-date-range"
+                onClick={() => { setDateFrom(''); setDateTo(''); }}
+                className="btn-secondary btn-sm whitespace-nowrap"
+                title="Clear date range"
+              >
+                ✕ Clear
+              </button>
+            )}
+          </div>
+        </div>
+        {/* Status filter - scrollable row on mobile */}
+        <div className="flex gap-2 overflow-x-auto pb-1 -mb-1 scrollbar-none">
+          {STATUS_FILTERS.map(f => (
+            <button
+              key={f}
+              id={`filter-${f.toLowerCase()}`}
+              onClick={() => setFilter(f)}
+              className={`btn btn-sm whitespace-nowrap transition-all ${
+                filter === f
+                  ? 'bg-primary-600 text-white border-primary-500'
+                  : 'btn-secondary'
+              }`}
+            >
+              <FunnelIcon className="w-3.5 h-3.5" />
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <div className="space-y-3 mt-4">
+          {[1, 2, 3, 4, 5].map(i => <div key={i} className="animate-pulse bg-white/5 h-16 rounded-xl w-full" />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass">
+          <EmptyState title="No bookings found" description="Try changing your search or filter." />
+        </div>
+      ) : (
+        <div className="table-container">
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="table-header">
+                  {['User', 'Room / Building', 'Date & Time', 'Seats', 'Status', 'Actions'].map(h => (
+                    <th key={h} className="table-cell py-3 text-xs">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(b => (
+                  <tr key={b.id} className="table-row">
+                    <td className="table-cell">
+                      <p className="font-medium text-white">{b.userName || b.userEmail}</p>
+                      <p className="text-xs text-slate-500 truncate max-w-[180px]">{b.userEmail}</p>
+                    </td>
+                    <td className="table-cell">
+                      <p className="font-medium text-slate-200">{b.room}</p>
+                      <p className="text-xs text-slate-500">
+                        {b.building}{b.department ? ` • ${b.department}` : ''}{b.programmeName ? ` • ${b.programmeName}` : ''}
+                      </p>
+                      {b.generatorRequired && (
+                        <p className="text-xs text-amber-400 mt-1">
+                          ⚡ Generator ({b.generatorReason})
+                        </p>
+                      )}
+                      {b.extensionCordRequired && (
+                        <p className="text-xs text-blue-400 mt-0.5">🔌 Extension Cord</p>
+                      )}
+                      {b.monitorRequired && (
+                        <p className="text-xs text-blue-400 mt-0.5">🖥️ Monitor</p>
+                      )}
+                    </td>
+                    <td className="table-cell">
+                      <p className="text-slate-200">{formatDate(b.date)}</p>
+                      <p className="text-xs text-slate-500">{b.startTime} – {b.endTime}</p>
+                    </td>
+                    <td className="table-cell">{b.seats}</td>
+                    <td className="table-cell"><Badge status={b.status} /></td>
+                    <td className="table-cell">
+                      <div className="flex gap-2">
+                        {b.status !== BOOKING_STATUS.APPROVED && (
+                          <button
+                            id={`approve-${b.id}`}
+                            onClick={() => confirmAction(b.id, BOOKING_STATUS.APPROVED)}
+                            disabled={updating[b.id]}
+                            className="btn-success btn-sm"
+                          >
+                            {updating[b.id]
+                              ? <Spinner size="sm" />
+                              : <CheckCircleIcon className="w-4 h-4" />
+                            }
+                            Approve
+                          </button>
+                        )}
+                        {b.status !== BOOKING_STATUS.REJECTED && (
+                          <button
+                            id={`reject-${b.id}`}
+                            onClick={() => confirmAction(b.id, BOOKING_STATUS.REJECTED)}
+                            disabled={updating[b.id]}
+                            className="btn-danger btn-sm"
+                          >
+                            {updating[b.id]
+                              ? <Spinner size="sm" />
+                              : <XCircleIcon className="w-4 h-4" />
+                            }
+                            Reject
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card list */}
+          <div className="md:hidden divide-y divide-white/6">
+            {filtered.map(b => (
+              <div key={b.id} className="p-4 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-semibold text-white">{b.room}</p>
+                    <p className="text-xs text-slate-500">
+                      {b.building}{b.department ? ` • ${b.department}` : ''}{b.programmeName ? ` • ${b.programmeName}` : ''}
+                    </p>
+                    {b.generatorRequired && (
+                      <p className="text-xs text-amber-400 mt-0.5">
+                        ⚡ Generator: {b.generatorReason}
+                      </p>
+                    )}
+                    {b.extensionCordRequired && (
+                      <p className="text-xs text-blue-400 mt-0.5">🔌 Extension Cord</p>
+                    )}
+                    {b.monitorRequired && (
+                      <p className="text-xs text-blue-400 mt-0.5">🖥️ Monitor</p>
+                    )}
+                  </div>
+                  <Badge status={b.status} />
+                </div>
+                <p className="text-xs text-slate-400">{b.userName || b.userEmail}</p>
+                <p className="text-xs text-slate-400">{formatDate(b.date)} · {b.startTime}–{b.endTime}</p>
+                <div className="flex gap-2 pt-1">
+                  {b.status !== BOOKING_STATUS.APPROVED && (
+                    <button onClick={() => confirmAction(b.id, BOOKING_STATUS.APPROVED)} disabled={updating[b.id]} className="btn-success btn-sm flex-1">
+                      {updating[b.id] ? <Spinner size="sm" /> : '✓'} Approve
+                    </button>
+                  )}
+                  {b.status !== BOOKING_STATUS.REJECTED && (
+                    <button onClick={() => confirmAction(b.id, BOOKING_STATUS.REJECTED)} disabled={updating[b.id]} className="btn-danger btn-sm flex-1">
+                      {updating[b.id] ? <Spinner size="sm" /> : '✕'} Reject
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Modal
+        isOpen={actionModal.isOpen}
+        onClose={() => setActionModal({ isOpen: false, bookingId: null, status: null })}
+        title={`Confirm ${actionModal.status}`}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-300">
+            Are you sure you want to <strong className={actionModal.status === BOOKING_STATUS.APPROVED ? 'text-emerald-400' : 'text-red-400'}>{actionModal.status?.toLowerCase()}</strong> this booking?
+          </p>
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1">Reason (Optional)</label>
+            <textarea
+              className="input w-full min-h-[100px]"
+              placeholder="Provide a reason for the user..."
+              value={adminReason}
+              onChange={e => setAdminReason(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => setActionModal({ isOpen: false, bookingId: null, status: null })}
+              className="btn-secondary flex-1"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={executeStatusUpdate}
+              className={`${actionModal.status === BOOKING_STATUS.APPROVED ? 'btn-success' : 'btn-danger'} flex-1`}
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default AdminPanel;
