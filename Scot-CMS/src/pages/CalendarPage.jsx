@@ -9,6 +9,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import toast from 'react-hot-toast';
 
 import { useAllBookings } from '../hooks/useBookings';
+import { getHolidaysAsEvents } from '../utils/holidays';
 import { combineDateAndTime, isPastDate, formatDate } from '../utils/dateHelpers';
 import Spinner from '../components/common/Spinner';
 import Modal from '../components/common/Modal';
@@ -33,7 +34,8 @@ const CalendarPage = () => {
 
   // Calendar events
   const calendarEvents = useMemo(() => {
-    return bookings
+    const holidayEvents = getHolidaysAsEvents();
+    const regularEvents = bookings
       .filter(b => b.status !== 'Rejected' && b.status !== 'Cancelled')
       .map(b => ({
         id: b.id,
@@ -42,9 +44,11 @@ const CalendarPage = () => {
         end: combineDateAndTime(b.date, b.endTime) || new Date(),
         resource: b,
       }));
+    return [...holidayEvents, ...regularEvents];
   }, [bookings]);
 
   const handleEventClick = (event) => {
+    if (event.isHoliday) return;
     if (!event.isGoogleCalendarEvent) {
       setSelectedBooking(event.resource);
     }
@@ -84,6 +88,15 @@ const CalendarPage = () => {
 
   // Custom Components
   const CustomEvent = ({ event }) => {
+    if (event.isHoliday) {
+      return (
+        <div className="flex flex-col h-full leading-tight py-1 px-1 justify-center items-center text-center opacity-90" title={event.title}>
+          <span className="truncate font-extrabold text-[11px] sm:text-xs text-rose-300 uppercase tracking-wider w-full">
+            🎉 {event.title}
+          </span>
+        </div>
+      );
+    }
     if (event.isGoogleCalendarEvent) {
       return (
         <div className="flex flex-col h-full leading-tight py-0.5 px-1" title={event.title}>
@@ -114,6 +127,17 @@ const CalendarPage = () => {
   };
 
   const eventPropGetter = (event) => {
+    if (event.isHoliday) {
+      return {
+        className: 'calendar-event-holiday',
+        style: {
+          backgroundColor: 'rgba(244, 63, 94, 0.15)', // rose-500/15
+          border: '1px solid rgba(244, 63, 94, 0.3)', // rose-500/30
+          color: '#fda4af', // rose-300
+          pointerEvents: 'none' // make it unclickable
+        }
+      };
+    }
     if (event.isGoogleCalendarEvent) {
       return {
         className: 'calendar-event-base',
