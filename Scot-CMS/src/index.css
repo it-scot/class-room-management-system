@@ -239,6 +239,12 @@
 @media (max-width: 768px)  { .dashboard-calendar { height: 500px; } }
 @media (max-width: 480px)  { .dashboard-calendar { height: 450px; } }
 
+/* Extra large calendar for the full-screen view so day cells are huge */
+.full-calendar { height: 1200px; width: 100%; }
+@media (max-width: 1024px) { .full-calendar { height: 1000px; } }
+@media (max-width: 768px)  { .full-calendar { height: 850px; } }
+@media (max-width: 480px)  { .full-calendar { height: 750px; } }
+
 /* ── react-datepicker overrides ──────────────────────────────────────────── */
 .react-datepicker-wrapper { width: 100%; }
 .react-datepicker-popper  { z-index: 9999 !important; }

@@ -17,8 +17,9 @@ import toast from 'react-hot-toast';
 
 const navLinks = [
   { to: '/',            label: 'Dashboard',   icon: HomeIcon          },
-  { to: '/book',        label: 'Book Room',    icon: PlusCircleIcon    },
-  { to: '/my-bookings', label: 'My Bookings',  icon: CalendarDaysIcon  },
+  { to: '/calendar',    label: 'Calendar',    icon: CalendarDaysIcon  },
+  { to: '/book',        label: 'Book Room',   icon: PlusCircleIcon    },
+  { to: '/my-bookings', label: 'My Bookings', icon: CalendarDaysIcon  },
 ];
 
 const adminLinks = [
