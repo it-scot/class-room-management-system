@@ -16,7 +16,8 @@ try {
   try {
     const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}');
     admin.initializeApp({
-      credential: cert(serviceAccount)
+      credential: cert(serviceAccount),
+      projectId: 'scot-class-mgt-new'
     });
   } catch (initErr) {
     console.error('[FIREBASE ADMIN] Failed to initialize:', initErr.message);
@@ -201,16 +202,23 @@ app.get('/api/cron/reminders', async (req, res) => {
     const { type } = req.query; // 'wednesday' or 'thursday'
     if (!type) return res.status(400).send('Missing type parameter');
 
-    // Fetch all users
+    // Fetch all users (from Google Sheet instead of Firestore due to IAM permission limits)
     let emails = [];
     try {
-      const db = getFirestore();
-      const snap = await db.collection('users').get();
-      snap.forEach(doc => {
-        if (doc.data().email) emails.push(doc.data().email);
+      const sheets = getSheets();
+      if (!sheets) throw new Error('No sheets configured');
+      const spreadsheetId = getSpreadsheetId();
+      if (!spreadsheetId) throw new Error('No sheet ID');
+
+      const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!C:C` });
+      const rows = resp.data.values || [];
+      
+      const dataRows = rows.slice(1); // skip header
+      dataRows.forEach(row => {
+        if (row[0]) emails.push(row[0].trim());
       });
-    } catch (dbErr) {
-      console.error('[CRON] Firestore error:', dbErr.message);
+    } catch (err) {
+      console.error('[CRON] Sheets error:', err.message);
       return res.status(500).send('Database error');
     }
 
