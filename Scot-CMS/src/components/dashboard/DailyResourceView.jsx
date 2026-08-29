@@ -1,26 +1,27 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { format } from 'date-fns';
 import { BUILDINGS, BOOKING_STATUS } from '../../utils/constants';
 import { formatDate } from '../../utils/dateHelpers';
 import { ClockIcon, UserIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import Modal from '../common/Modal';
 
-// Vibrant preset colors for different rooms
+// Vibrant preset colors for different rooms - Made more solid for clear visibility
 const ROOM_COLORS = [
-  'bg-blue-500/20 border-blue-500/40 text-blue-300 hover:border-blue-400',
-  'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:border-emerald-400',
-  'bg-violet-500/20 border-violet-500/40 text-violet-300 hover:border-violet-400',
-  'bg-rose-500/20 border-rose-500/40 text-rose-300 hover:border-rose-400',
-  'bg-amber-500/20 border-amber-500/40 text-amber-300 hover:border-amber-400',
-  'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 hover:border-cyan-400',
-  'bg-fuchsia-500/20 border-fuchsia-500/40 text-fuchsia-300 hover:border-fuchsia-400',
-  'bg-teal-500/20 border-teal-500/40 text-teal-300 hover:border-teal-400',
-  'bg-indigo-500/20 border-indigo-500/40 text-indigo-300 hover:border-indigo-400',
-  'bg-orange-500/20 border-orange-500/40 text-orange-300 hover:border-orange-400',
-  'bg-sky-500/20 border-sky-500/40 text-sky-300 hover:border-sky-400',
-  'bg-lime-500/20 border-lime-500/40 text-lime-300 hover:border-lime-400',
-  'bg-pink-500/20 border-pink-500/40 text-pink-300 hover:border-pink-400',
-  'bg-purple-500/20 border-purple-500/40 text-purple-300 hover:border-purple-400',
-  'bg-red-500/20 border-red-500/40 text-red-300 hover:border-red-400',
+  'bg-blue-500/80 border-blue-400 text-white shadow-lg shadow-blue-500/20 backdrop-blur-md hover:bg-blue-500',
+  'bg-emerald-500/80 border-emerald-400 text-white shadow-lg shadow-emerald-500/20 backdrop-blur-md hover:bg-emerald-500',
+  'bg-violet-500/80 border-violet-400 text-white shadow-lg shadow-violet-500/20 backdrop-blur-md hover:bg-violet-500',
+  'bg-rose-500/80 border-rose-400 text-white shadow-lg shadow-rose-500/20 backdrop-blur-md hover:bg-rose-500',
+  'bg-amber-500/80 border-amber-400 text-white shadow-lg shadow-amber-500/20 backdrop-blur-md hover:bg-amber-500',
+  'bg-cyan-500/80 border-cyan-400 text-white shadow-lg shadow-cyan-500/20 backdrop-blur-md hover:bg-cyan-500',
+  'bg-fuchsia-500/80 border-fuchsia-400 text-white shadow-lg shadow-fuchsia-500/20 backdrop-blur-md hover:bg-fuchsia-500',
+  'bg-teal-500/80 border-teal-400 text-white shadow-lg shadow-teal-500/20 backdrop-blur-md hover:bg-teal-500',
+  'bg-indigo-500/80 border-indigo-400 text-white shadow-lg shadow-indigo-500/20 backdrop-blur-md hover:bg-indigo-500',
+  'bg-orange-500/80 border-orange-400 text-white shadow-lg shadow-orange-500/20 backdrop-blur-md hover:bg-orange-500',
+  'bg-sky-500/80 border-sky-400 text-white shadow-lg shadow-sky-500/20 backdrop-blur-md hover:bg-sky-500',
+  'bg-lime-500/80 border-lime-400 text-white shadow-lg shadow-lime-500/20 backdrop-blur-md hover:bg-lime-500',
+  'bg-pink-500/80 border-pink-400 text-white shadow-lg shadow-pink-500/20 backdrop-blur-md hover:bg-pink-500',
+  'bg-purple-500/80 border-purple-400 text-white shadow-lg shadow-purple-500/20 backdrop-blur-md hover:bg-purple-500',
+  'bg-red-500/80 border-red-400 text-white shadow-lg shadow-red-500/20 backdrop-blur-md hover:bg-red-500',
 ];
 
 const ALL_ROOMS = [];
@@ -43,12 +44,12 @@ const parseTime = (timeStr) => {
 const DailyResourceView = ({ date, bookings }) => {
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedDate, setSelectedDate] = useState(
-    typeof date === 'string' ? date : date.toISOString().split('T')[0]
+    typeof date === 'string' ? date : format(date, 'yyyy-MM-dd')
   );
 
   // Keep selectedDate in sync if parent date changes (e.g. user navigates big calendar)
   useEffect(() => {
-    setSelectedDate(typeof date === 'string' ? date : date.toISOString().split('T')[0]);
+    setSelectedDate(typeof date === 'string' ? date : format(date, 'yyyy-MM-dd'));
   }, [date]);
 
   // Generate 1-hour ticks for the Y-axis (from 08:30 to 17:30)
@@ -59,7 +60,7 @@ const DailyResourceView = ({ date, bookings }) => {
 
   // Map bookings into columns
   const columnData = useMemo(() => {
-    const dStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+    const dStr = selectedDate;
     
     return ALL_ROOMS.map((roomInfo, index) => {
       const roomBookings = bookings.filter(b => 
@@ -158,18 +159,18 @@ const DailyResourceView = ({ date, bookings }) => {
                     <div
                       key={b.id}
                       onClick={() => setSelectedBooking(b)}
-                      className={`absolute left-1 right-1 rounded-lg border flex flex-col p-1.5 cursor-pointer shadow-lg transition-all duration-200 hover:z-10 ${b.colorClass}`}
+                      className={`absolute left-1 right-1 rounded-lg border-2 flex flex-col p-1.5 cursor-pointer shadow-lg transition-all duration-200 z-10 hover:z-20 ${b.colorClass}`}
                       style={{ top: `${b.top}px`, height: `${b.height}px` }}
                     >
                       <div className="flex items-start justify-between gap-1">
-                        <span className="text-[10px] font-bold leading-tight truncate">{b.startTime} - {b.endTime}</span>
-                        {b.status === 'Approved' && <CheckCircleIcon className="w-3 h-3 shrink-0 opacity-80" />}
+                        <span className="text-[10px] sm:text-xs font-bold leading-tight truncate drop-shadow-md">{b.startTime} - {b.endTime}</span>
+                        {b.status === 'Approved' && <CheckCircleIcon className="w-4 h-4 shrink-0 drop-shadow-md" />}
                       </div>
-                      <span className="text-[9px] sm:text-[10px] font-medium opacity-90 truncate mt-0.5">
-                        {b.userName?.split(' ')[0] || b.userEmail?.split('@')[0]}
+                      <span className="text-[9px] sm:text-[11px] font-semibold truncate mt-0.5 drop-shadow-md">
+                        {b.userName || b.userEmail?.split('@')[0]}
                       </span>
                       {b.height >= 50 && (
-                        <span className="text-[9px] opacity-75 truncate mt-auto hidden sm:block">
+                        <span className="text-[9px] sm:text-[10px] font-medium opacity-90 truncate mt-auto hidden sm:block drop-shadow-md">
                           {b.reason}
                         </span>
                       )}
