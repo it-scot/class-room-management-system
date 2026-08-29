@@ -11,6 +11,7 @@ import { useAllBookings, useBookings } from '../hooks/useBookings';
 import { useAuth } from '../store/AuthContext';
 
 import { formatDate, parseDateStr, combineDateAndTime, isBeforeMinBookingDate } from '../utils/dateHelpers';
+import { getRoomColorClass } from '../utils/constants';
 import Badge from '../components/common/Badge';
 import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
@@ -43,7 +44,7 @@ const DashboardPage = () => {
   const todayStr    = format(new Date(), 'yyyy-MM-dd');
   const todayEvents = useMemo(
     () => bookings
-      .filter(b => b.date === todayStr && b.status !== 'Rejected')
+      .filter(b => b.date === todayStr && b.status !== 'Rejected' && b.status !== 'Cancelled')
       .sort((a, b) => a.startTime.localeCompare(b.startTime)),
     [bookings, todayStr],
   );
@@ -116,16 +117,12 @@ const DashboardPage = () => {
       );
     }
     const b = event.resource;
-    const isApproved = b.status === 'Approved';
     return (
-      <div className="flex flex-col h-full leading-tight py-0.5">
-        <div className="flex items-center gap-1 overflow-hidden">
-          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isApproved ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-          <span className="truncate font-bold text-[10px] sm:text-[11px] uppercase tracking-tighter">
-            {event.title}
-          </span>
-        </div>
-        <div className="text-[9px] opacity-80 truncate hidden sm:block">
+      <div className={`flex flex-col h-full leading-tight p-1 rounded ${getRoomColorClass(b.building, b.room)}`}>
+        <span className="truncate font-bold text-[10px] sm:text-[11px] uppercase tracking-tighter drop-shadow-md">
+          {event.title}
+        </span>
+        <div className="text-[9px] opacity-90 truncate hidden sm:block drop-shadow-md font-medium mt-0.5">
           {b.startTime} – {b.userName?.split(' ')[0] || 'User'}
         </div>
       </div>
@@ -143,24 +140,21 @@ const DashboardPage = () => {
         }
       };
     }
-    const status = event.resource.status;
-    let className = 'calendar-event-base';
-    
-    if (status === 'Approved') className += ' event-approved';
-    else if (status === 'Pending') className += ' event-pending';
-    
-    return { className };
+    return { style: { backgroundColor: 'transparent', border: 'none', padding: 0 } };
   };
 
   // ─── Stats ───────────────────────────────────────────────────────────────
 
   // Compute stats from the user's own bookings (Firestore real-time)
-  const stats = useMemo(() => ({
-    total:    myBookings.length,
-    pending:  myBookings.filter(b => b.status === 'Pending').length,
-    approved: myBookings.filter(b => b.status === 'Approved').length,
-    today:    myBookings.filter(b => b.date === todayStr).length,
-  }), [myBookings, todayStr]);
+  const stats = useMemo(() => {
+    const active = myBookings.filter(b => b.status !== 'Rejected' && b.status !== 'Cancelled');
+    return {
+      total:    active.length,
+      pending:  active.filter(b => b.status === 'Pending').length,
+      approved: active.filter(b => b.status === 'Approved').length,
+      today:    active.filter(b => b.date === todayStr).length,
+    };
+  }, [myBookings, todayStr]);
   const statsLoading = loading;
 
   return (

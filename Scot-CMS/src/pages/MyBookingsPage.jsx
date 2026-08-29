@@ -73,7 +73,7 @@ const MyBookingsPage = () => {
       {!loading && bookings.length > 0 && (
         <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-6">
           {[
-            { label: 'Total',    value: bookings.length,                                         color: 'text-primary-400', bg: 'bg-primary-500/10' },
+            { label: 'Total',    value: bookings.filter(b => b.status === 'Pending' || b.status === 'Approved').length, color: 'text-primary-400', bg: 'bg-primary-500/10' },
             { label: 'Pending',  value: bookings.filter(b => b.status === 'Pending').length,     color: 'text-amber-400',   bg: 'bg-amber-500/10' },
             { label: 'Approved', value: bookings.filter(b => b.status === 'Approved').length,    color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
           ].map(s => (

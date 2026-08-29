@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { useAllBookings } from '../hooks/useBookings';
 import { getHolidaysAsEvents } from '../utils/holidays';
 import { combineDateAndTime, isBeforeMinBookingDate, formatDate } from '../utils/dateHelpers';
+import { getRoomColorClass } from '../utils/constants';
 import Spinner from '../components/common/Spinner';
 import Modal from '../components/common/Modal';
 import DayViewModal from '../components/dashboard/DayViewModal';
@@ -110,16 +111,12 @@ const CalendarPage = () => {
       );
     }
     const b = event.resource;
-    const isApproved = b.status === 'Approved';
     return (
-      <div className="flex flex-col h-full leading-tight py-0.5 px-1">
-        <div className="flex items-center gap-1.5 overflow-hidden">
-          <div className={`w-2 h-2 rounded-full shrink-0 ${isApproved ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-          <span className="truncate font-bold text-xs uppercase tracking-tighter">
-            {event.title}
-          </span>
-        </div>
-        <div className="text-[10px] opacity-80 truncate mt-0.5 hidden sm:block">
+      <div className={`flex flex-col h-full leading-tight p-1 rounded ${getRoomColorClass(b.building, b.room)}`}>
+        <span className="truncate font-bold text-[10px] sm:text-[11px] uppercase tracking-tighter drop-shadow-md">
+          {event.title}
+        </span>
+        <div className="text-[10px] opacity-90 truncate mt-0.5 hidden sm:block drop-shadow-md font-medium">
           {b.startTime} – {b.userName?.split(' ')[0] || 'User'}
         </div>
       </div>
@@ -148,13 +145,7 @@ const CalendarPage = () => {
         }
       };
     }
-    const status = event.resource.status;
-    let className = 'calendar-event-base';
-
-    if (status === 'Approved') className += ' event-approved';
-    else if (status === 'Pending') className += ' event-pending';
-
-    return { className };
+    return { style: { backgroundColor: 'transparent', border: 'none', padding: 0 } };
   };
 
   return (
