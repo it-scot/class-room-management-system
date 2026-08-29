@@ -8,7 +8,7 @@ export const BUILDINGS = {
     'Board Room',
     'Mechatronics Lab',
     'E&E Lab',
-    'COO Office',
+    'Admin Room',
     'Admission Office',
     'Computer Lab',
     'Classroom 101',
@@ -17,7 +17,6 @@ export const BUILDINGS = {
   ],
   'Building 2 (New)': [
     'Library',
-    'Registar office',
     'Classroom 301',
     'Classroom 101',
     'Classroom 102',
@@ -61,7 +60,7 @@ export const ROOM_CAPACITY = {
   'Board Room':       20,
   'ME Lab':           30,
   'EE Lab':           30,
-  'COO Office':       15,
+  'Admin Room':       15,
   'Admission Office': 15,
   'Computer Lab':     30,
   'Classroom 101':    40,
@@ -69,7 +68,6 @@ export const ROOM_CAPACITY = {
   'Classroom 103':    40,
   // Building 2
   'Library':          50,
-  'Registar office':  10,
   'Classroom 301':    40,
   'Classroom 201':    40,
   'Classroom 202':    40,
