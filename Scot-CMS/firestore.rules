@@ -39,8 +39,8 @@ service cloud.firestore {
       allow create: if isScotUser() &&
                        request.resource.data.userId == request.auth.uid &&
                        request.resource.data.status == 'Approved';
-      // Only admins can update status; users cannot change status themselves
-      allow update: if isAdmin();
+      // Admins can update anything; users can only update to Cancelled
+      allow update: if isAdmin() || (isOwner(resource.data.userId) && request.resource.data.status == 'Cancelled');
       // User can delete own booking; admin can delete any
       allow delete: if isOwner(resource.data.userId) || isAdmin();
     }
