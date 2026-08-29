@@ -39,7 +39,7 @@ const CalendarPage = () => {
       .filter(b => b.status !== 'Rejected' && b.status !== 'Cancelled')
       .map(b => ({
         id: b.id,
-        title: `${b.room} — ${b.startTime}`,
+        title: `${b.building.split(' ')[0]} - ${b.room}`,
         start: combineDateAndTime(b.date, b.startTime) || new Date(),
         end: combineDateAndTime(b.date, b.endTime) || new Date(),
         resource: b,
@@ -116,7 +116,7 @@ const CalendarPage = () => {
         <div className="flex items-center gap-1.5 overflow-hidden">
           <div className={`w-2 h-2 rounded-full shrink-0 ${isApproved ? 'bg-emerald-400' : 'bg-amber-400'}`} />
           <span className="truncate font-bold text-xs uppercase tracking-tighter">
-            {b.room.split(' ')[0]}
+            {event.title}
           </span>
         </div>
         <div className="text-[10px] opacity-80 truncate mt-0.5 hidden sm:block">

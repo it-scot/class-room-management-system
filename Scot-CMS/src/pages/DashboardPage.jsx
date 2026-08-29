@@ -16,6 +16,7 @@ import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
 import Modal from '../components/common/Modal';
 import DayViewModal from '../components/dashboard/DayViewModal';
+import DailyResourceView from '../components/dashboard/DailyResourceView';
 import {
   CalendarDaysIcon,
   ClockIcon,
@@ -53,7 +54,7 @@ const DashboardPage = () => {
       .filter(b => b.status !== 'Rejected' && b.status !== 'Cancelled')
       .map(b => ({
         id:    b.id,
-        title: `${b.room} — ${b.startTime}`,
+        title: `${b.building.split(' ')[0]} - ${b.room}`,
         start: combineDateAndTime(b.date, b.startTime) || new Date(),
         end:   combineDateAndTime(b.date, b.endTime) || new Date(),
         resource: b,
@@ -121,7 +122,7 @@ const DashboardPage = () => {
         <div className="flex items-center gap-1 overflow-hidden">
           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isApproved ? 'bg-emerald-400' : 'bg-amber-400'}`} />
           <span className="truncate font-bold text-[10px] sm:text-[11px] uppercase tracking-tighter">
-            {b.room.split(' ')[0]}
+            {event.title}
           </span>
         </div>
         <div className="text-[9px] opacity-80 truncate hidden sm:block">
@@ -282,6 +283,9 @@ const DashboardPage = () => {
           )}
         </div>
       </div>
+
+      {/* Daily Resource Gantt Chart */}
+      <DailyResourceView date={currentDate} bookings={bookings} />
 
       {/* Booking detail modal */}
       {selectedBooking && (
