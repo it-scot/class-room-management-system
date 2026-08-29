@@ -11,15 +11,18 @@ import { Link } from 'react-router-dom';
 const ALL_ROOMS = Object.values(BUILDINGS).flat();
 
 const DayViewModal = ({ isOpen, onClose, date, bookings }) => {
-  const [selectedRoom, setSelectedRoom] = useState(ALL_ROOMS[0]);
+  const initialBuilding = Object.keys(BUILDINGS)[0];
+  const initialRoom = BUILDINGS[initialBuilding][0];
+  const [selectedLocation, setSelectedLocation] = useState({ building: initialBuilding, room: initialRoom });
 
   // Generate explicit 1-hour blocks from 08:30 to 17:30
   const timelineBlocks = useMemo(() => {
-    if (!date || !selectedRoom) return [];
+    if (!date || !selectedLocation.room) return [];
 
     const roomBookings = bookings.filter(b => 
       b.date === date && 
-      b.room === selectedRoom && 
+      b.room === selectedLocation.room && 
+      b.building === selectedLocation.building &&
       b.status !== BOOKING_STATUS.REJECTED &&
       b.status !== BOOKING_STATUS.CANCELLED
     );
@@ -57,7 +60,7 @@ const DayViewModal = ({ isOpen, onClose, date, bookings }) => {
         };
       }
     });
-  }, [date, selectedRoom, bookings]);
+  }, [date, selectedLocation, bookings]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Daily Overview" size="lg">
@@ -71,13 +74,16 @@ const DayViewModal = ({ isOpen, onClose, date, bookings }) => {
           <div className="min-w-[200px]">
             <select
               className="input w-full"
-              value={selectedRoom}
-              onChange={(e) => setSelectedRoom(e.target.value)}
+              value={`${selectedLocation.building}|${selectedLocation.room}`}
+              onChange={(e) => {
+                const [building, room] = e.target.value.split('|');
+                setSelectedLocation({ building, room });
+              }}
             >
               {Object.entries(BUILDINGS).map(([buildingName, rooms]) => (
                 <optgroup key={buildingName} label={buildingName} className="bg-surface-800 text-white">
                   {rooms.map(room => (
-                    <option key={room} value={room}>{room}</option>
+                    <option key={`${buildingName}|${room}`} value={`${buildingName}|${room}`}>{room}</option>
                   ))}
                 </optgroup>
               ))}
@@ -107,7 +113,7 @@ const DayViewModal = ({ isOpen, onClose, date, bookings }) => {
                         </div>
                       </div>
                       <Link
-                        to={`/book?date=${date}&room=${encodeURIComponent(selectedRoom)}&start=${block.startTime}`}
+                        to={`/book?date=${date}&building=${encodeURIComponent(selectedLocation.building)}&room=${encodeURIComponent(selectedLocation.room)}&start=${block.startTime}`}
                         className="btn-success btn-sm w-full sm:w-auto text-center"
                       >
                         Book This Time

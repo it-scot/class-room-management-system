@@ -21,7 +21,7 @@ const timesOverlap = (s1, e1, s2, e2) => s1 < e2 && e1 > s2;
  * Returns the created document ID.
  */
 export const createBooking = async (bookingData) => {
-  const roomDateId = `${bookingData.room.replace(/[^a-zA-Z0-9]/g, '_')}_${bookingData.date}`;
+  const roomDateId = `${bookingData.building.replace(/[^a-zA-Z0-9]/g, '_')}_${bookingData.room.replace(/[^a-zA-Z0-9]/g, '_')}_${bookingData.date}`;
   const lockRef = doc(db, 'room_locks', roomDateId);
   const bookingRef = doc(collection(db, BOOKINGS_COL));
 
@@ -88,9 +88,10 @@ export const getUserBookings = async (userId) => {
 /**
  * Fetch bookings for a specific room and date (overlap check).
  */
-export const getRoomBookingsForDate = async (room, date) => {
+export const getRoomBookingsForDate = async (building, room, date) => {
   const q = query(
     collection(db, BOOKINGS_COL),
+    where('building', '==', building),
     where('room', '==', room),
     where('date', '==', date),
   );
@@ -144,8 +145,8 @@ export const deleteBooking = async (bookingId) => {
   const data = snap.data();
 
   // If this booking has a lock, remove it
-  if (data.room && data.date) {
-    const roomDateId = `${data.room.replace(/[^a-zA-Z0-9]/g, '_')}_${data.date}`;
+  if (data.building && data.room && data.date) {
+    const roomDateId = `${data.building.replace(/[^a-zA-Z0-9]/g, '_')}_${data.room.replace(/[^a-zA-Z0-9]/g, '_')}_${data.date}`;
     const lockRef = doc(db, 'room_locks', roomDateId);
     
     await runTransaction(db, async (transaction) => {

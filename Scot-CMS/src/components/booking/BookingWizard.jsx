@@ -28,11 +28,12 @@ const BookingWizard = () => {
   const [errors,  setErrors]  = useState({});
   const [searchParams] = useSearchParams();
 
-  // Support deep-link: ?room=X&date=Y&start=Z
+  // Support deep-link: ?building=B&room=X&date=Y&start=Z
   const initialRoom = searchParams.get('room') || '';
+  const initialBuilding = searchParams.get('building') || '';
 
   const [formData, setFormData] = useState({
-    building:          '',
+    building:          initialBuilding,
     rooms:             initialRoom ? [initialRoom] : [],   // ← array
     date:              searchParams.get('date') || '',
     startTime:         searchParams.get('start') || '',
@@ -48,19 +49,10 @@ const BookingWizard = () => {
     monitorRequired: false,
   });
 
-  // If deep-linked with room+date+start, jump straight to Step 3
+  // If deep-linked with building+room+date+start, jump straight to Step 3
   useEffect(() => {
-    if (initialRoom && formData.date && formData.startTime) {
-      import('../../utils/constants').then(({ BUILDINGS }) => {
-        let bld = '';
-        for (const [b, rooms] of Object.entries(BUILDINGS)) {
-          if (rooms.includes(initialRoom)) bld = b;
-        }
-        if (bld) {
-          setFormData(f => ({ ...f, building: bld }));
-          setStep(2);
-        }
-      });
+    if (initialBuilding && initialRoom && formData.date && formData.startTime) {
+      setStep(2);
     }
   }, []);
 
@@ -97,7 +89,7 @@ const BookingWizard = () => {
       await Promise.all(
         rooms.map(async (room) => {
           const existing = await withTimeout(
-            getRoomBookingsForDate(room, formData.date),
+            getRoomBookingsForDate(formData.building, room, formData.date),
             5000,
             []
           );
@@ -139,15 +131,34 @@ const BookingWizard = () => {
         monitorRequired: formData.monitorRequired,
       };
 
-      const bookingIds = await withTimeout(
-        Promise.all(rooms.map(room => createBooking({ ...commonPayload, room }))),
+      const results = await withTimeout(
+        Promise.allSettled(rooms.map(room => createBooking({ ...commonPayload, room }))),
         10000,
         null
       );
 
-      if (!bookingIds) {
+      if (!results) {
         throw new Error('Firestore timed out. Please check your Firebase setup.');
       }
+
+      const successfulIds = [];
+      const failedReasons = [];
+
+      results.forEach((res) => {
+        if (res.status === 'fulfilled') {
+          successfulIds.push(res.value);
+        } else {
+          failedReasons.push(res.reason?.message || 'Conflict detected.');
+        }
+      });
+
+      if (failedReasons.length > 0) {
+        // Rollback successful ones to prevent ghost bookings
+        await Promise.all(successfulIds.map(id => deleteBooking(id)));
+        throw new Error(failedReasons[0]);
+      }
+
+      const bookingIds = successfulIds;
 
       // ── 4. Fire email (backend handles sheet row too) ─────────────────────
       // We process these one by one or in parallel, but we must check for errors
