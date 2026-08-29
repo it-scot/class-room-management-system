@@ -41,9 +41,8 @@ service cloud.firestore {
                        request.resource.data.status == 'Approved';
       // Only admins can update status; users cannot change status themselves
       allow update: if isAdmin();
-      // User can delete own Approved booking; admin can delete any
-      allow delete: if (isOwner(resource.data.userId) && (resource.data.status == 'Approved' || resource.data.status == 'Pending'))
-                    || isAdmin();
+      // User can delete own booking; admin can delete any
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
     }
 
     // ─── Room Locks (Concurrency) ─────────────────────────────────────────
