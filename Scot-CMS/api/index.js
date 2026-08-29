@@ -118,6 +118,9 @@ const bookingToRow = (b) => [
 // Helper: Check if two time ranges overlap (HH:MM strings)
 const timesOverlap = (s1, e1, s2, e2) => s1 < e2 && e1 > s2;
 
+// Helper: Normalize building names to consider 'Building 1' and 'Building 1 (Main)' as equal
+const normalizeBuilding = (b) => (b || '').replace(/ \(.+\)/, '').trim();
+
 // ─── Email HTML Templates ───────────────────────────────────────────────────
 
 const base = (content) => `<!DOCTYPE html>
@@ -425,7 +428,7 @@ END:VCALENDAR`;
           const rEnd    = row[8];  // I
           const rStatus = row[11]; // L
 
-          if (rBuilding === booking.building && rRoom === booking.room && rDate === booking.date && rStatus !== 'Rejected' && rStatus !== 'Cancelled') {
+          if (normalizeBuilding(rBuilding) === normalizeBuilding(booking.building) && rRoom === booking.room && rDate === booking.date && rStatus !== 'Rejected' && rStatus !== 'Cancelled') {
             return timesOverlap(booking.startTime, booking.endTime, rStart, rEnd);
           }
           return false;

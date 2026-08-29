@@ -21,7 +21,8 @@ const timesOverlap = (s1, e1, s2, e2) => s1 < e2 && e1 > s2;
  * Returns the created document ID.
  */
 export const createBooking = async (bookingData) => {
-  const roomDateId = `${bookingData.building.replace(/[^a-zA-Z0-9]/g, '_')}_${bookingData.room.replace(/[^a-zA-Z0-9]/g, '_')}_${bookingData.date}`;
+  const normBuilding = (bookingData.building || '').replace(/ \(.+\)/, '').trim();
+  const roomDateId = `${normBuilding.replace(/[^a-zA-Z0-9]/g, '_')}_${bookingData.room.replace(/[^a-zA-Z0-9]/g, '_')}_${bookingData.date}`;
   const lockRef = doc(db, 'room_locks', roomDateId);
   const bookingRef = doc(collection(db, BOOKINGS_COL));
 
@@ -91,12 +92,14 @@ export const getUserBookings = async (userId) => {
 export const getRoomBookingsForDate = async (building, room, date) => {
   const q = query(
     collection(db, BOOKINGS_COL),
-    where('building', '==', building),
     where('room', '==', room),
     where('date', '==', date),
   );
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const normBuilding = (building || '').replace(/ \(.+\)/, '').trim();
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(d => (d.building || '').replace(/ \(.+\)/, '').trim() === normBuilding);
 };
 
 /**
@@ -146,7 +149,8 @@ export const deleteBooking = async (bookingId) => {
 
   // If this booking has a lock, remove it
   if (data.building && data.room && data.date) {
-    const roomDateId = `${data.building.replace(/[^a-zA-Z0-9]/g, '_')}_${data.room.replace(/[^a-zA-Z0-9]/g, '_')}_${data.date}`;
+    const normBuilding = (data.building || '').replace(/ \(.+\)/, '').trim();
+    const roomDateId = `${normBuilding.replace(/[^a-zA-Z0-9]/g, '_')}_${data.room.replace(/[^a-zA-Z0-9]/g, '_')}_${data.date}`;
     const lockRef = doc(db, 'room_locks', roomDateId);
     
     await runTransaction(db, async (transaction) => {
