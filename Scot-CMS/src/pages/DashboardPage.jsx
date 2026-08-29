@@ -54,7 +54,7 @@ const DashboardPage = () => {
       .filter(b => b.status !== 'Rejected' && b.status !== 'Cancelled')
       .map(b => ({
         id:    b.id,
-        title: `${b.building.split(' ')[0]} - ${b.room}`,
+        title: `${b.building.replace(/ \(.+\)/, '')} - ${b.room}`,
         start: combineDateAndTime(b.date, b.startTime) || new Date(),
         end:   combineDateAndTime(b.date, b.endTime) || new Date(),
         resource: b,

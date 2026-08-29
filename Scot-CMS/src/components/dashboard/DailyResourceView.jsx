@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { BUILDINGS, BOOKING_STATUS } from '../../utils/constants';
 import { formatDate } from '../../utils/dateHelpers';
 import { ClockIcon, UserIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
@@ -26,7 +26,7 @@ const ROOM_COLORS = [
 const ALL_ROOMS = [];
 Object.entries(BUILDINGS).forEach(([building, rooms]) => {
   rooms.forEach(room => {
-    ALL_ROOMS.push({ building, room, bShort: building.split(' ')[0] });
+    ALL_ROOMS.push({ building, room, bShort: building.replace(/ \(.+\)/, '') });
   });
 });
 
@@ -42,6 +42,14 @@ const parseTime = (timeStr) => {
 
 const DailyResourceView = ({ date, bookings }) => {
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(
+    typeof date === 'string' ? date : date.toISOString().split('T')[0]
+  );
+
+  // Keep selectedDate in sync if parent date changes (e.g. user navigates big calendar)
+  useEffect(() => {
+    setSelectedDate(typeof date === 'string' ? date : date.toISOString().split('T')[0]);
+  }, [date]);
 
   // Generate 1-hour ticks for the Y-axis (from 08:30 to 17:30)
   const timeLabels = [];
@@ -79,16 +87,28 @@ const DailyResourceView = ({ date, bookings }) => {
 
       return { ...roomInfo, bookings: roomBookings, colorClass: ROOM_COLORS[index % ROOM_COLORS.length] };
     });
-  }, [date, bookings]);
+  }, [selectedDate, bookings]);
 
   return (
     <div className="glass p-4 sm:p-6 flex flex-col mt-6 animate-fade-in overflow-hidden">
-      <div className="mb-4">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <ClockIcon className="w-5 h-5 text-primary-400" />
-          Daily Classroom Timeline — {typeof date === 'string' ? formatDate(date) : formatDate(date.toISOString().split('T')[0])}
-        </h2>
-        <p className="text-sm text-slate-400 mt-1">Scroll horizontally to view all classrooms.</p>
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <ClockIcon className="w-5 h-5 text-primary-400" />
+            Daily Classroom Timeline
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">Scroll horizontally to view all classrooms.</p>
+        </div>
+        <div className="flex items-center gap-2 bg-surface-800 p-1.5 rounded-lg border border-white/10">
+          <input 
+            type="date" 
+            className="input bg-transparent border-none text-sm text-white px-2 py-1 focus:ring-0" 
+            value={selectedDate}
+            onChange={(e) => {
+              if (e.target.value) setSelectedDate(e.target.value);
+            }}
+          />
+        </div>
       </div>
 
       <div className="relative border border-white/10 rounded-xl bg-surface-900/50 overflow-x-auto custom-scrollbar">
