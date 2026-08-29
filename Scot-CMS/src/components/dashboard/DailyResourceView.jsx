@@ -63,10 +63,11 @@ const DailyResourceView = ({ date, bookings }) => {
     const dStr = selectedDate;
     
     return ALL_ROOMS.map((roomInfo, index) => {
+      const normalize = (str) => (str || '').replace(/ \(.+\)/, '').trim();
       const roomBookings = bookings.filter(b => 
         b.date === dStr && 
         b.room === roomInfo.room && 
-        b.building === roomInfo.building &&
+        normalize(b.building) === normalize(roomInfo.building) &&
         b.status !== BOOKING_STATUS.REJECTED &&
         b.status !== BOOKING_STATUS.CANCELLED
       ).map(b => {

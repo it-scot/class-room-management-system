@@ -19,10 +19,11 @@ const DayViewModal = ({ isOpen, onClose, date, bookings }) => {
   const timelineBlocks = useMemo(() => {
     if (!date || !selectedLocation.room) return [];
 
+    const normalize = (str) => (str || '').replace(/ \(.+\)/, '').trim();
     const roomBookings = bookings.filter(b => 
       b.date === date && 
       b.room === selectedLocation.room && 
-      b.building === selectedLocation.building &&
+      normalize(b.building) === normalize(selectedLocation.building) &&
       b.status !== BOOKING_STATUS.REJECTED &&
       b.status !== BOOKING_STATUS.CANCELLED
     );
