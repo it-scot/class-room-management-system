@@ -15,10 +15,9 @@ service cloud.firestore {
       return isScotUser() &&
              (
                request.auth.token.email == 'shanaka@scot.lk' ||
-               request.auth.token.email == 'menura@scot.lk' ||
-               request.auth.token.email == 'yohan@scot.lk' ||
-               request.auth.token.email == 'disitha@scot.lk' ||
-               request.auth.token.email == 'ishan.madhuranga@scot.lk' ||
+               request.auth.token.email == 'duminda@scot.lk' ||
+               request.auth.token.email == 'shamila@scot.lk' ||
+               request.auth.token.email == 'nimantha@scot.lk' ||
                exists(/databases/$(database)/documents/admins/$(request.auth.token.email))
              );
     }

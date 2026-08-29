@@ -12,10 +12,9 @@ const AdminLoginPage = ({ onLoginSuccess }) => {
     
     const allowedAdmins = [
       'shanaka@scot.lk',
-      'menura@scot.lk',
-      'yohan@scot.lk',
-      'disitha@scot.lk',
-      'ishan.madhuranga@scot.lk'
+      'duminda@scot.lk',
+      'shamila@scot.lk',
+      'nimantha@scot.lk'
     ];
 
     if (allowedAdmins.includes(username) && password === username) {

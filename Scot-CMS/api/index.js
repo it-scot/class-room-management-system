@@ -360,7 +360,8 @@ app.post('/api/bookings/new', async (req, res) => {
 
     console.log('[NEW BOOKING]', booking.id, booking.room, booking.date);
 
-    const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
+    const defaultAdmins = 'shanaka@scot.lk,duminda@scot.lk,shamila@scot.lk,nimantha@scot.lk';
+    const adminEmails = (process.env.ADMIN_EMAILS || defaultAdmins).split(',').map(e => e.trim()).filter(Boolean);
     const recipients  = [...new Set([booking.userEmail, booking.supervisorEmail, ...adminEmails])].filter(Boolean);
 
     const results = await Promise.allSettled([
@@ -479,7 +480,8 @@ app.post('/api/bookings/status', async (req, res) => {
 
     console.log('[STATUS UPDATE]', booking.id, '→', booking.status);
 
-    const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
+    const defaultAdmins = 'shanaka@scot.lk,duminda@scot.lk,shamila@scot.lk,nimantha@scot.lk';
+    const adminEmails = (process.env.ADMIN_EMAILS || defaultAdmins).split(',').map(e => e.trim()).filter(Boolean);
     const recipients  = [...new Set([booking.userEmail, booking.supervisorEmail, ...adminEmails])].filter(Boolean);
 
     const results = await Promise.allSettled([
