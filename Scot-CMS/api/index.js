@@ -418,13 +418,14 @@ END:VCALENDAR`;
 
         // 2. Check for overlaps (Status != Rejected)
         const isOverlapping = dataRows.some(row => {
+          const rBuilding = row[4];  // E
           const rRoom   = row[5];  // F
           const rDate   = row[6];  // G
           const rStart  = row[7];  // H
           const rEnd    = row[8];  // I
           const rStatus = row[11]; // L
 
-          if (rRoom === booking.room && rDate === booking.date && rStatus !== 'Rejected' && rStatus !== 'Cancelled') {
+          if (rBuilding === booking.building && rRoom === booking.room && rDate === booking.date && rStatus !== 'Rejected' && rStatus !== 'Cancelled') {
             return timesOverlap(booking.startTime, booking.endTime, rStart, rEnd);
           }
           return false;
