@@ -1,7 +1,7 @@
 // src/utils/validators.js
 // Booking form validation logic.
 
-import { isPastDateTime, isPastDate, timesOverlap, toMinutes } from './dateHelpers';
+import { isPastDateTime, isBeforeMinBookingDate, timesOverlap, toMinutes } from './dateHelpers';
 import { ALLOWED_DOMAIN, MIN_SEATS, MAX_SEATS } from './constants';
 
 /**
@@ -14,8 +14,8 @@ export const validateBooking = ({ date, startTime, endTime, seats, reason, super
   // Date checks
   if (!date) {
     errors.date = 'Please select a date.';
-  } else if (isPastDate(date)) {
-    errors.date = 'Cannot book a past date.';
+  } else if (isBeforeMinBookingDate(date)) {
+    errors.date = 'Must book at least 2 days in advance.';
   }
 
   // Time checks

@@ -6,7 +6,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 import { AuthProvider } from './store/AuthContext';
-import { PortalProvider } from './store/PortalContext';
 import ProtectedRoute   from './components/layout/ProtectedRoute';
 import Navbar           from './components/layout/Navbar';
 
@@ -59,8 +58,7 @@ const AdminRoute = () => {
 
 const App = () => (
   <AuthProvider>
-    <PortalProvider>
-      <BrowserRouter>
+    <BrowserRouter>
       <Toaster
         position="top-right"
         toastOptions={{
@@ -110,7 +108,6 @@ const App = () => (
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
-    </PortalProvider>
   </AuthProvider>
 );
 

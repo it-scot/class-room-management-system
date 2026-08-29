@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 
 import { useAllBookings } from '../hooks/useBookings';
 import { getHolidaysAsEvents } from '../utils/holidays';
-import { combineDateAndTime, isPastDate, formatDate } from '../utils/dateHelpers';
+import { combineDateAndTime, isBeforeMinBookingDate, formatDate } from '../utils/dateHelpers';
 import Spinner from '../components/common/Spinner';
 import Modal from '../components/common/Modal';
 import DayViewModal from '../components/dashboard/DayViewModal';
@@ -56,7 +56,7 @@ const CalendarPage = () => {
 
   const dayPropGetter = (date) => {
     const dStr = format(date, 'yyyy-MM-dd');
-    if (isPastDate(dStr)) {
+    if (isBeforeMinBookingDate(dStr)) {
       return {
         className: 'past-day',
         style: {
@@ -71,8 +71,8 @@ const CalendarPage = () => {
 
   const handleDayClick = (date) => {
     const dStr = format(date, 'yyyy-MM-dd');
-    if (isPastDate(dStr)) {
-      toast.error("You can't book for past dates. Please select a future date.", {
+    if (isBeforeMinBookingDate(dStr)) {
+      toast.error("You must book at least 2 days in advance.", {
         icon: '📅',
         style: {
           borderRadius: '10px',

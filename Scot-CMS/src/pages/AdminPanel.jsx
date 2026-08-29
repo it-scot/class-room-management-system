@@ -12,7 +12,6 @@ import Modal from '../components/common/Modal';
 import EmptyState from '../components/common/EmptyState';
 import { formatDate, formatTimestamp } from '../utils/dateHelpers';
 import { BOOKING_STATUS }      from '../utils/constants';
-import { usePortal } from '../store/PortalContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import {
@@ -30,7 +29,6 @@ const STATUS_FILTERS = ['All', BOOKING_STATUS.PENDING, BOOKING_STATUS.APPROVED, 
 
 const AdminPanel = () => {
   const { bookings, loading } = useBookings(true); // fetch all
-  const { portalConfig, isPortalOpen } = usePortal();
   const [filter,    setFilter]    = useState('All');
   const [search,    setSearch]    = useState('');
   const [dateFrom,  setDateFrom]  = useState('');
@@ -133,26 +131,6 @@ const AdminPanel = () => {
     setAdminReason('');
   };
 
-  const toggleManualOverride = async () => {
-    if (!portalConfig) return;
-    const configRef = doc(db, 'settings', 'portalConfig');
-    await setDoc(configRef, {
-      ...portalConfig,
-      isManualOverride: !portalConfig.isManualOverride
-    });
-    toast.success(`Manual override ${!portalConfig.isManualOverride ? 'enabled' : 'disabled'}`);
-  };
-
-  const setManualStatus = async (status) => {
-    if (!portalConfig) return;
-    const configRef = doc(db, 'settings', 'portalConfig');
-    await setDoc(configRef, {
-      ...portalConfig,
-      manualStatus: status
-    });
-    toast.success(`Portal forced to ${status}`);
-  };
-
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in">
       {/* Header */}
@@ -176,33 +154,6 @@ const AdminPanel = () => {
           </button>
         </div>
       </div>
-
-      {/* Portal Settings Control */}
-      {portalConfig && (
-        <div className="glass p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-white/10 rounded-xl">
-          <div className="flex items-center gap-3">
-            <CogIcon className="w-5 h-5 text-slate-400" />
-            <div>
-              <p className="text-sm font-semibold text-white">Portal Booking Status</p>
-              <p className="text-xs text-slate-400">Currently: <strong className={isPortalOpen ? 'text-emerald-400' : 'text-red-400'}>{isPortalOpen ? 'OPEN' : 'FROZEN'}</strong></p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-4 flex-wrap">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={!portalConfig.isManualOverride} onChange={toggleManualOverride} className="w-4 h-4 rounded border-white/20 bg-white/5 accent-primary-500" />
-              <span className="text-sm text-slate-300">Auto Schedule (Sun-Thu)</span>
-            </label>
-            
-            {portalConfig.isManualOverride && (
-              <div className="flex gap-2">
-                <button onClick={() => setManualStatus('OPEN')} className={`btn-sm ${portalConfig.manualStatus === 'OPEN' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-surface-800 text-slate-400 hover:bg-surface-700'}`}>Force Open</button>
-                <button onClick={() => setManualStatus('CLOSED')} className={`btn-sm ${portalConfig.manualStatus === 'CLOSED' ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-surface-800 text-slate-400 hover:bg-surface-700'}`}>Force Close</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="glass-dark p-3 sm:p-4 mb-4 sm:mb-6 flex flex-col gap-3">

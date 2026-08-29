@@ -9,9 +9,8 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 import { useAllBookings, useBookings } from '../hooks/useBookings';
 import { useAuth } from '../store/AuthContext';
-import { usePortal } from '../store/PortalContext';
 
-import { formatDate, parseDateStr, combineDateAndTime, isPastDate } from '../utils/dateHelpers';
+import { formatDate, parseDateStr, combineDateAndTime, isBeforeMinBookingDate } from '../utils/dateHelpers';
 import Badge from '../components/common/Badge';
 import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
@@ -33,7 +32,6 @@ const DashboardPage = () => {
   const { bookings, loading } = useAllBookings();           // all bookings → calendar
   const { bookings: myBookings } = useBookings(false);       // own bookings → stats
   const { user, isAdmin }     = useAuth();
-  const { isPortalOpen }      = usePortal();
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedDay,     setSelectedDay]     = useState(null);
   const [currentDate,     setCurrentDate]     = useState(new Date());
@@ -71,7 +69,7 @@ const DashboardPage = () => {
 
   const dayPropGetter = (date) => {
     const dStr = format(date, 'yyyy-MM-dd');
-    if (isPastDate(dStr)) {
+    if (isBeforeMinBookingDate(dStr)) {
       return {
         className: 'past-day',
         style: {
@@ -86,8 +84,8 @@ const DashboardPage = () => {
 
   const handleDayClick = (date) => {
     const dStr = format(date, 'yyyy-MM-dd');
-    if (isPastDate(dStr)) {
-      toast.error("You can't book for past dates. Please select a future date.", {
+    if (isBeforeMinBookingDate(dStr)) {
+      toast.error("You must book at least 2 days in advance.", {
         icon: '📅',
         style: {
           borderRadius: '10px',
@@ -174,16 +172,10 @@ const DashboardPage = () => {
             {format(new Date(), 'EEEE, dd MMMM yyyy')}
           </p>
         </div>
-        {isPortalOpen ? (
-          <Link to="/book" className="btn-primary w-full sm:w-auto mt-3 sm:mt-0 shadow-lg shadow-primary-500/25">
-            <AcademicCapIcon className="w-4 h-4" />
-            Book a Room
-          </Link>
-        ) : (
-          <button disabled className="btn w-full sm:w-auto mt-3 sm:mt-0 bg-surface-700 text-slate-400 cursor-not-allowed">
-            Portal Closed
-          </button>
-        )}
+        <Link to="/book" className="btn-primary w-full sm:w-auto mt-3 sm:mt-0 shadow-lg shadow-primary-500/25">
+          <AcademicCapIcon className="w-4 h-4" />
+          Book a Room
+        </Link>
       </div>
 
       {/* Stats */}

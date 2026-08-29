@@ -5,6 +5,7 @@ import React from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { TIME_SLOTS, ROOM_CAPACITY } from '../../utils/constants';
+import { getMinBookingDate } from '../../utils/dateHelpers';
 
 const ErrorMsg = ({ msg }) =>
   msg ? <p className="text-xs text-red-400 mt-1 animate-fade-in">{msg}</p> : null;
@@ -95,7 +96,7 @@ const Step3Details = ({ formData, update, errors, setErrors, onNext, onBack }) =
           id="booking-date"
           selected={selectedDate}
           onChange={handleDate}
-          minDate={new Date()}
+          minDate={getMinBookingDate()}
           dateFormat="dd/MM/yyyy"
           placeholderText="Select date…"
           className="input"

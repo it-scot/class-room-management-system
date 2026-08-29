@@ -1,7 +1,7 @@
 // src/utils/dateHelpers.js
 // Utility functions for date/time manipulation.
 
-import { format, isAfter, isBefore, parseISO, isToday, startOfDay } from 'date-fns';
+import { format, isAfter, isBefore, parseISO, isToday, startOfDay, addDays } from 'date-fns';
 
 /**
  * Format a date string or Date object.
@@ -64,6 +64,21 @@ export const toMinutes = (time) => {
  * Return today's date as YYYY-MM-DD.
  */
 export const todayStr = () => format(new Date(), 'yyyy-MM-dd');
+
+/**
+ * Return the minimum allowed booking date (today + 2 days).
+ */
+export const getMinBookingDate = () => {
+  return startOfDay(addDays(new Date(), 2));
+};
+
+/**
+ * Check if a date string is before the minimum allowed booking date.
+ */
+export const isBeforeMinBookingDate = (dateStr) => {
+  if (!dateStr) return false;
+  return isBefore(startOfDay(parseISO(dateStr)), getMinBookingDate());
+};
 
 /**
  * Combine YYYY-MM-DD and HH:MM into a JS Date object.
