@@ -367,14 +367,66 @@ app.post('/api/bookings/new', async (req, res) => {
     const adminEmails = ['shanaka@scot.lk', 'duminda@scot.lk', 'shamila@scot.lk', 'nimantha@scot.lk'];
     const recipients  = [...new Set([booking.userEmail, booking.supervisorEmail, ...adminEmails])].filter(Boolean);
 
-    const results = await Promise.allSettled([
-      // Send email with ICS attachment
-      (async () => {
-        const dtstart = booking.date.replace(/-/g, '') + 'T' + booking.startTime.replace(':', '') + '00';
-        const dtend   = booking.date.replace(/-/g, '') + 'T' + booking.endTime.replace(':', '') + '00';
-        const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-        
-        const icsContent = `BEGIN:VCALENDAR
+    // 1. Append to sheet (with conflict check)
+    let sheetSuccess = false;
+    try {
+      const sheets = getSheets();
+      if (sheets) {
+        const spreadsheetId = getSpreadsheetId();
+        if (spreadsheetId) {
+          const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:T` });
+          const rows = resp.data.values || [];
+          const dataRows = rows.slice(1);
+          
+          const isOverlapping = dataRows.some(row => {
+            const rBuilding = row[4];
+            const rRoom   = row[5];
+            const rDate   = row[6];
+            const rStart  = row[7];
+            const rEnd    = row[8];
+            const rStatus = row[11];
+            
+            if (normalizeBuilding(rBuilding) === normalizeBuilding(booking.building) && rRoom === booking.room && rDate === booking.date && rStatus !== 'Rejected' && rStatus !== 'Cancelled') {
+              return timesOverlap(booking.startTime, booking.endTime, rStart, rEnd);
+            }
+            return false;
+          });
+          
+          if (isOverlapping) {
+            console.warn(`[SHEETS] Conflict detected for ${booking.id} in ${booking.room} on ${booking.date}`);
+            return res.status(409).json({ ok: false, error: 'This slot is already booked. Please refresh and try again.' });
+          }
+          
+          if (rows.length === 0) {
+            await sheets.spreadsheets.values.update({
+              spreadsheetId, range: `${SHEET_NAME}!A1`, valueInputOption: 'RAW',
+              requestBody: { values: [HEADERS] },
+            });
+          }
+          
+          await sheets.spreadsheets.values.append({
+            spreadsheetId,
+            range:            `${SHEET_NAME}!A:T`,
+            valueInputOption: 'RAW',
+            insertDataOption: 'INSERT_ROWS',
+            requestBody:      { values: [bookingToRow(booking)] },
+          });
+          console.log('[SHEETS] Row appended for', booking.id);
+          sheetSuccess = true;
+        }
+      }
+    } catch (sheetErr) {
+      console.error('[SHEETS] Failed to append row:', sheetErr);
+      return res.status(409).json({ ok: false, error: 'Failed to save booking to Sheets.' });
+    }
+
+    // 2. Send email with ICS attachment
+    try {
+      const dtstart = booking.date.replace(/-/g, '') + 'T' + booking.startTime.replace(':', '') + '00';
+      const dtend   = booking.date.replace(/-/g, '') + 'T' + booking.endTime.replace(':', '') + '00';
+      const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+      
+      const icsContent = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Scot CMS//Classroom Booking//EN
 CALSCALE:GREGORIAN
@@ -393,80 +445,25 @@ STATUS:CONFIRMED
 END:VEVENT
 END:VCALENDAR`;
 
-        const transporter = getTransporter();
-        await transporter.sendMail({
-          from:    `"Scot CMS" <${process.env.GMAIL_USER}>`,
-          to:      recipients.join(', '),
-          subject: `[Scot CMS] New Booking: ${booking.room} on ${booking.date}`,
-          html:    newBookingHtml(booking),
-          icalEvent: {
-            filename: 'invitation.ics',
-            method: 'request',
-            content: icsContent
-          }
-        });
-        console.log('[EMAIL SENT] New booking →', recipients.join(', '));
-      })(),
-
-      // Append to sheet (with conflict check)
-      (async () => {
-        const sheets = getSheets();
-        if (!sheets) return;
-        const spreadsheetId = getSpreadsheetId();
-        if (!spreadsheetId) { console.warn('[SHEETS] No spreadsheet ID.'); return; }
-
-        // 1. Fetch existing bookings for this date/room
-        const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:T` });
-        const rows = resp.data.values || [];
-        const dataRows = rows.slice(1); // skip header
-
-        // 2. Check for overlaps (Status != Rejected)
-        const isOverlapping = dataRows.some(row => {
-          const rBuilding = row[4];  // E
-          const rRoom   = row[5];  // F
-          const rDate   = row[6];  // G
-          const rStart  = row[7];  // H
-          const rEnd    = row[8];  // I
-          const rStatus = row[11]; // L
-
-          if (normalizeBuilding(rBuilding) === normalizeBuilding(booking.building) && rRoom === booking.room && rDate === booking.date && rStatus !== 'Rejected' && rStatus !== 'Cancelled') {
-            return timesOverlap(booking.startTime, booking.endTime, rStart, rEnd);
-          }
-          return false;
-        });
-
-        if (isOverlapping) {
-          console.warn(`[SHEETS] Conflict detected for ${booking.id} in ${booking.room} on ${booking.date}`);
-          throw new Error('This slot is already booked. Please refresh and try again.');
+      const transporter = getTransporter();
+      await transporter.sendMail({
+        from:    `"Scot CMS" <${process.env.GMAIL_USER}>`,
+        to:      recipients.join(', '),
+        subject: `[Scot CMS] New Booking: ${booking.room} on ${booking.date}`,
+        html:    newBookingHtml(booking),
+        icalEvent: {
+          filename: 'invitation.ics',
+          method: 'request',
+          content: icsContent
         }
-
-        // 3. Ensure header row exists (if empty)
-        if (rows.length === 0) {
-          await sheets.spreadsheets.values.update({
-            spreadsheetId, range: `${SHEET_NAME}!A1`, valueInputOption: 'RAW',
-            requestBody: { values: [HEADERS] },
-          });
-        }
-
-        // 4. Append
-        await sheets.spreadsheets.values.append({
-          spreadsheetId,
-          range:            `${SHEET_NAME}!A:T`,
-          valueInputOption: 'RAW',
-          insertDataOption: 'INSERT_ROWS',
-          requestBody:      { values: [bookingToRow(booking)] },
-        });
-        console.log('[SHEETS] Row appended for', booking.id);
-      })(),
-    ]);
-
-    const someFailed = results.some(r => r.status === 'rejected');
-    if (someFailed) {
-      const errorMsg = results.find(r => r.status === 'rejected')?.reason?.message || 'Request partially failed';
-      res.status(409).json({ ok: false, error: errorMsg });
-    } else {
-      res.json({ ok: true });
+      });
+      console.log('[EMAIL SENT] New booking →', recipients.join(', '));
+    } catch (emailErr) {
+      console.error('[EMAIL FAILED] But booking was saved to sheets:', emailErr.message);
+      // Do not return 409 here. The booking is valid and in Sheets/Firestore.
     }
+
+    res.json({ ok: true, message: 'Booking processed successfully' });
   } catch (error) {
     console.error('[NEW BOOKING] Unexpected error:', error);
     res.status(500).json({ ok: false, error: 'Internal server error processing booking' });
