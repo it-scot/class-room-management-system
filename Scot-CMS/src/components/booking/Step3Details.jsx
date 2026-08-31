@@ -1,7 +1,7 @@
 // src/components/booking/Step3Details.jsx
 // Booking details form: date, times, seats, reason, supervisor email.
 
-import React from 'react';
+import React, { useState } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { TIME_SLOTS, ROOM_CAPACITY } from '../../utils/constants';
@@ -11,7 +11,21 @@ const ErrorMsg = ({ msg }) =>
   msg ? <p className="text-xs text-red-400 mt-1 animate-fade-in">{msg}</p> : null;
 
 const Step3Details = ({ formData, update, errors, setErrors, onNext, onBack }) => {
+  const [newLecturer, setNewLecturer] = useState('');
   const clearErr = (field) => setErrors(e => { const n = { ...e }; delete n[field]; return n; });
+
+  const handleAddLecturer = (e) => {
+    e.preventDefault();
+    if (newLecturer.trim()) {
+      update({ inPersonLecturers: [...(formData.inPersonLecturers || []), newLecturer.trim()] });
+      setNewLecturer('');
+      clearErr('inPersonLecturers');
+    }
+  };
+
+  const handleRemoveLecturer = (idx) => {
+    update({ inPersonLecturers: (formData.inPersonLecturers || []).filter((_, i) => i !== idx) });
+  };
 
   const selectedDate = formData.date
     ? (() => { const [y,m,d] = formData.date.split('-').map(Number); return new Date(y, m-1, d); })()
@@ -279,14 +293,36 @@ const Step3Details = ({ formData, update, errors, setErrors, onNext, onBack }) =
       {/* Add In Person Lecturers */}
       <div className="input-group">
         <label className="input-label" htmlFor="in-person">Add In Person Lecturers (Optional)</label>
-        <input
-          id="in-person"
-          type="text"
-          className="input"
-          placeholder="e.g. Dr. Smith, Mr. John"
-          value={formData.inPersonLecturers || ''}
-          onChange={e => { update({ inPersonLecturers: e.target.value }); clearErr('inPersonLecturers'); }}
-        />
+        <div className="flex gap-2">
+          <input
+            id="in-person"
+            type="text"
+            className="input flex-1"
+            placeholder="e.g. Dr. Smith"
+            value={newLecturer}
+            onChange={e => setNewLecturer(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddLecturer(e);
+              }
+            }}
+          />
+          <button type="button" onClick={handleAddLecturer} className="btn-secondary whitespace-nowrap">
+            Add
+          </button>
+        </div>
+        
+        {formData.inPersonLecturers && formData.inPersonLecturers.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {formData.inPersonLecturers.map((lec, idx) => (
+              <span key={idx} className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full px-3 py-1 text-xs flex items-center gap-2">
+                {lec}
+                <button type="button" onClick={() => handleRemoveLecturer(idx)} className="hover:text-emerald-100 font-bold">&times;</button>
+              </span>
+            ))}
+          </div>
+        )}
         <ErrorMsg msg={errors.inPersonLecturers} />
       </div>
 
