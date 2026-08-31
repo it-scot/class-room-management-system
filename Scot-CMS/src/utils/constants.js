@@ -93,8 +93,8 @@ export const MIN_SEATS = 1;
 export const ROOM_CAPACITY = {
   // Building 1
   'Board Room':       20,
-  'ME Lab':           30,
-  'EE Lab':           30,
+  'Mechatronics Lab': 30,
+  'E&E Lab':          30,
   'Admin Room':       15,
   'Admission Office': 15,
   'Computer Lab':     30,

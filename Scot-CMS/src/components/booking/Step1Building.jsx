@@ -7,7 +7,7 @@ import { BUILDINGS } from '../../utils/constants';
 const Step1Building = ({ formData, update, onNext }) => {
   const buildings = Object.keys(BUILDINGS);
 
-  const select = (b) => { update({ building: b, room: '' }); };
+  const select = (b) => { update({ building: b, rooms: [] }); };
 
   return (
     <div className="space-y-6 animate-fade-in">

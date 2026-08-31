@@ -10,7 +10,9 @@ const Step2Room = ({ formData, update, onNext, onBack }) => {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <p className="text-xs text-primary-400 font-semibold uppercase tracking-wider mb-1">{formData.building}</p>
+        <div className="inline-flex items-center px-3 py-1 rounded-full bg-primary-500/20 border border-primary-500/30 text-primary-300 text-xs font-bold uppercase tracking-wider mb-3">
+          {formData.building}
+        </div>
         <h2 className="text-xl font-bold text-white mb-1">Select Room</h2>
         <p className="text-sm text-slate-400">You can select <span className="text-primary-300 font-semibold">multiple rooms</span> for a combined booking.</p>
       </div>

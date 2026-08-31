@@ -72,7 +72,7 @@ export const createBooking = async (bookingData) => {
  * Fetch all bookings (admin use).
  */
 export const getAllBookings = async () => {
-  const q   = query(collection(db, BOOKINGS_COL), orderBy('createdAt', 'desc'), limit(100));
+  const q   = query(collection(db, BOOKINGS_COL), orderBy('createdAt', 'desc'));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 };
@@ -107,7 +107,7 @@ export const getRoomBookingsForDate = async (building, room, date) => {
  * Returns unsubscribe function.
  */
 export const subscribeToAllBookings = (callback) => {
-  const q = query(collection(db, BOOKINGS_COL), orderBy('createdAt', 'desc'), limit(100));
+  const q = query(collection(db, BOOKINGS_COL), orderBy('createdAt', 'desc'));
   return onSnapshot(q, (snap) => {
     const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     callback(bookings);
