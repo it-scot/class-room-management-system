@@ -7,8 +7,7 @@ import Badge from '../common/Badge';
 import { CheckCircleIcon, XCircleIcon, ClockIcon, UserIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
 import { Link } from 'react-router-dom';
 
-// Flatten all rooms into a single array
-const ALL_ROOMS = Object.values(BUILDINGS).flat();
+
 
 const DayViewModal = ({ isOpen, onClose, date, bookings }) => {
   const initialBuilding = Object.keys(BUILDINGS)[0];
