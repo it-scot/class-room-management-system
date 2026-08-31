@@ -16,6 +16,7 @@ import MyBookingsPage from './pages/MyBookingsPage';
 import AdminPanel     from './pages/AdminPanel';
 import AdminLoginPage from './pages/AdminLoginPage';
 import CalendarPage   from './pages/CalendarPage';
+import GanttChartPage from './pages/GanttChartPage';
 
 const Layout = ({ children }) => {
   const currentYear = new Date().getFullYear();
@@ -88,6 +89,11 @@ const App = () => (
         <Route path="/calendar" element={
           <ProtectedRoute>
             <Layout><CalendarPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/gantt" element={
+          <ProtectedRoute>
+            <Layout><GanttChartPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/book" element={

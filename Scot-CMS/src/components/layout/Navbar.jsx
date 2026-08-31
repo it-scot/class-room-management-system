@@ -10,6 +10,7 @@ import {
   ArrowRightOnRectangleIcon,
   Bars3Icon,
   XMarkIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 import { signOutUser } from '../../services/authService';
 import { useAuth } from '../../store/AuthContext';
@@ -18,6 +19,7 @@ import toast from 'react-hot-toast';
 const navLinks = [
   { to: '/',            label: 'Dashboard',   icon: HomeIcon          },
   { to: '/calendar',    label: 'Calendar',    icon: CalendarDaysIcon  },
+  { to: '/gantt',       label: 'Gantt Chart', icon: ClockIcon         },
   { to: '/book',        label: 'Book Room',   icon: PlusCircleIcon    },
   { to: '/my-bookings', label: 'My Bookings', icon: CalendarDaysIcon  },
 ];
