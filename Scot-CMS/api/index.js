@@ -90,7 +90,7 @@ const HEADERS = [
   'Building', 'Room', 'Date', 'Start Time', 'End Time',
   'Seats', 'Reason', 'Status', 'Created At', 'Programme',
   'Department', 'Generator Required', 'Generator Reason',
-  'Extension Cord', 'Monitor',
+  'Extension Cord', 'Monitor', 'In Person Lecturers',
 ];
 
 const bookingToRow = (b) => [
@@ -113,6 +113,7 @@ const bookingToRow = (b) => [
   b.generatorReason || '',
   b.extensionCordRequired ? 'Yes' : 'No',
   b.monitorRequired ? 'Yes' : 'No',
+  b.inPersonLecturers || '',
 ];
 
 // Helper: Check if two time ranges overlap (HH:MM strings)
@@ -289,7 +290,7 @@ app.get('/api/stats', async (req, res) => {
     const spreadsheetId = getSpreadsheetId();
     if (!spreadsheetId) return res.status(500).json({ error: 'No sheet ID' });
 
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:Q` });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:T` });
     const rows = resp.data.values || [];
     
     const dataRows = rows.slice(1); // skip header
@@ -415,7 +416,7 @@ END:VCALENDAR`;
         if (!spreadsheetId) { console.warn('[SHEETS] No spreadsheet ID.'); return; }
 
         // 1. Fetch existing bookings for this date/room
-        const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:Q` });
+        const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:T` });
         const rows = resp.data.values || [];
         const dataRows = rows.slice(1); // skip header
 
@@ -450,7 +451,7 @@ END:VCALENDAR`;
         // 4. Append
         await sheets.spreadsheets.values.append({
           spreadsheetId,
-          range:            `${SHEET_NAME}!A:Q`,
+          range:            `${SHEET_NAME}!A:T`,
           valueInputOption: 'RAW',
           insertDataOption: 'INSERT_ROWS',
           requestBody:      { values: [bookingToRow(booking)] },

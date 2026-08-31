@@ -151,6 +151,11 @@ const DailyResourceView = ({ date, bookings }) => {
                       <span className="text-[9px] sm:text-[11px] font-semibold truncate mt-0.5 drop-shadow-md">
                         {b.userName || b.userEmail?.split('@')[0]}
                       </span>
+                      {b.inPersonLecturers && (
+                        <span className="text-[8px] sm:text-[9px] font-medium text-emerald-300 truncate mt-0.5 drop-shadow-md">
+                          In Person: {b.inPersonLecturers}
+                        </span>
+                      )}
                       {b.height >= 50 && (
                         <span className="text-[9px] sm:text-[10px] font-medium opacity-90 truncate mt-auto hidden sm:block drop-shadow-md">
                           {b.reason}
@@ -187,6 +192,7 @@ const DailyResourceView = ({ date, bookings }) => {
             <div className="glass-dark p-3 rounded-xl">
               <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><UserIcon className="w-3.5 h-3.5" /> Booked By</p>
               <p className="text-sm text-slate-200">{selectedBooking.userName || selectedBooking.userEmail}</p>
+              {selectedBooking.inPersonLecturers && <p className="text-sm text-emerald-300 mt-1">In Person: {selectedBooking.inPersonLecturers}</p>}
               {selectedBooking.programmeName && <p className="text-xs text-slate-400 mt-1">{selectedBooking.programmeName}</p>}
             </div>
             <div className="glass-dark p-3 rounded-xl">

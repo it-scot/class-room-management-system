@@ -237,6 +237,7 @@ const BookingDetailView = ({ booking: b }) => (
     <DetailRow icon={ClockIcon} label="Time" value={`${b.startTime} – ${b.endTime}`} />
     <DetailRow icon={UserIcon} label="Booked by" value={b.userName || b.userEmail} />
     <DetailRow icon={UserIcon} label="Supervisor" value={b.supervisorEmail} />
+    {b.inPersonLecturers && <DetailRow icon={UserIcon} label="In Person" value={b.inPersonLecturers} />}
     <DetailRow icon={AcademicCapIcon} label="Seats" value={b.seats} />
     <DetailRow icon={AcademicCapIcon} label="Reason" value={b.reason} />
   </div>

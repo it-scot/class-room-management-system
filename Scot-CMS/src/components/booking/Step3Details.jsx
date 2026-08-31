@@ -276,6 +276,20 @@ const Step3Details = ({ formData, update, errors, setErrors, onNext, onBack }) =
         </label>
       </div>
 
+      {/* Add In Person Lecturers */}
+      <div className="input-group">
+        <label className="input-label" htmlFor="in-person">Add In Person Lecturers (Optional)</label>
+        <input
+          id="in-person"
+          type="text"
+          className="input"
+          placeholder="e.g. Dr. Smith, Mr. John"
+          value={formData.inPersonLecturers || ''}
+          onChange={e => { update({ inPersonLecturers: e.target.value }); clearErr('inPersonLecturers'); }}
+        />
+        <ErrorMsg msg={errors.inPersonLecturers} />
+      </div>
+
       {/* Supervisor email */}
       <div className="input-group">
         <label className="input-label" htmlFor="supervisor-email">Supervisor Email *</label>

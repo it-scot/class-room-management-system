@@ -50,6 +50,7 @@ const Step4Confirm = ({ formData: f, onBack, onSubmit, loading }) => {
         <Row label="Department" value={f.department} />
         <Row label="Programme"  value={f.programmeName} />
         <Row label="Reason"     value={f.reason} />
+        <Row label="In Person"  value={f.inPersonLecturers} />
         <Row label="Supervisor" value={f.supervisorEmail} />
         {f.generatorRequired && (
           <Row label="Generator" value={`Yes (${f.generatorReason})`} />
