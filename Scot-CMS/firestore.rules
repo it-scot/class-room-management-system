@@ -18,6 +18,7 @@ service cloud.firestore {
                request.auth.token.email == 'duminda@scot.lk' ||
                request.auth.token.email == 'shamila@scot.lk' ||
                request.auth.token.email == 'nimantha@scot.lk' ||
+               request.auth.token.email == 'menura@scot.lk' ||
                exists(/databases/$(database)/documents/admins/$(request.auth.token.email))
              );
     }

@@ -71,6 +71,7 @@ export const ADMIN_EMAILS_FALLBACK = [
   'duminda@scot.lk',
   'shamila@scot.lk',
   'nimantha@scot.lk',
+  'menura@scot.lk',
 ];
 
 export const TIME_SLOTS = (() => {

@@ -364,7 +364,7 @@ app.post('/api/bookings/new', async (req, res) => {
 
     console.log('[NEW BOOKING]', booking.id, booking.room, booking.date);
 
-    const adminEmails = ['shanaka@scot.lk', 'duminda@scot.lk', 'shamila@scot.lk', 'nimantha@scot.lk'];
+    const adminEmails = ['shanaka@scot.lk', 'duminda@scot.lk', 'shamila@scot.lk', 'nimantha@scot.lk', 'menura@scot.lk'];
     const recipients  = [...new Set([booking.userEmail, booking.supervisorEmail, ...adminEmails])].filter(Boolean);
 
     // 1. Append to sheet (with conflict check)
@@ -481,7 +481,7 @@ app.post('/api/bookings/status', async (req, res) => {
 
     console.log('[STATUS UPDATE]', booking.id, '→', booking.status);
 
-    const adminEmails = ['shanaka@scot.lk', 'duminda@scot.lk', 'shamila@scot.lk', 'nimantha@scot.lk'];
+    const adminEmails = ['shanaka@scot.lk', 'duminda@scot.lk', 'shamila@scot.lk', 'nimantha@scot.lk', 'menura@scot.lk'];
     const recipients  = [...new Set([booking.userEmail, booking.supervisorEmail, ...adminEmails])].filter(Boolean);
 
     const results = await Promise.allSettled([
