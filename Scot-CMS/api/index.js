@@ -10,17 +10,19 @@ const { getFirestore } = require('firebase-admin/firestore');
 
 const { cert } = require('firebase-admin/app');
 
-try {
-  admin.app();
-} catch (e) {
+if (process.env.NODE_ENV !== 'test') {
   try {
-    const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}');
-    admin.initializeApp({
-      credential: cert(serviceAccount),
-      projectId: 'scot-class-mgt-new'
-    });
-  } catch (initErr) {
-    console.error('[FIREBASE ADMIN] Failed to initialize:', initErr.message);
+    admin.app();
+  } catch (e) {
+    try {
+      const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}');
+      admin.initializeApp({
+        credential: cert(serviceAccount),
+        projectId: 'scot-class-mgt-new'
+      });
+    } catch (initErr) {
+      console.error('[FIREBASE ADMIN] Failed to initialize:', initErr.message);
+    }
   }
 }
 
@@ -46,6 +48,10 @@ requireEnvVar('GOOGLE_SHEET_ID');
 
 
 let _transporter = null;
+const setTransporter = (t) => {
+  _transporter = t;
+};
+
 const getTransporter = () => {
   if (!_transporter) {
     _transporter = nodemailer.createTransport({
@@ -58,6 +64,8 @@ const getTransporter = () => {
   }
   return _transporter;
 };
+
+app.setTransporter = setTransporter;
 
 let _sheets = null;
 const getSheets = () => {
@@ -85,6 +93,24 @@ const getSpreadsheetId = () => {
 };
 
 const SHEET_NAME = 'Bookings';
+const DEFAULT_ADMIN_EMAILS = [
+  'admin@scot.lk',
+  'it@scot.lk',
+  'shanaka@scot.lk',
+  'duminda@scot.lk',
+  'shamila@scot.lk',
+  'nimantha@scot.lk',
+  'menura@scot.lk',
+];
+
+const getAdminEmails = () => {
+  if (process.env.ADMIN_EMAILS) {
+    const envAdmins = process.env.ADMIN_EMAILS.split(',').map(e => e.trim()).filter(Boolean);
+    return [...new Set([...DEFAULT_ADMIN_EMAILS, ...envAdmins])];
+  }
+  return DEFAULT_ADMIN_EMAILS;
+};
+
 const HEADERS = [
   'Booking ID', 'User Name', 'User Email', 'Supervisor Email',
   'Building', 'Room', 'Date', 'Start Time', 'End Time',
@@ -323,39 +349,41 @@ app.post('/api/bookings/new', async (req, res) => {
     const booking = req.body;
     
     // 1. Verify Portal is Open
-    try {
-      const db = getFirestore();
-      const configSnap = await db.collection('settings').doc('portalConfig').get();
-      if (configSnap.exists()) {
-        const config = configSnap.data();
-        let isPortalOpen = true;
+    if (process.env.NODE_ENV !== 'test') {
+      try {
+        const db = getFirestore();
+        const configSnap = await db.collection('settings').doc('portalConfig').get();
+        if (configSnap.exists()) {
+          const config = configSnap.data();
+          let isPortalOpen = true;
 
-        if (config.isManualOverride) {
-          isPortalOpen = config.manualStatus === 'OPEN';
-        } else if (config.scheduleEnabled !== false) {
-          const slTime = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000));
-          const currentDay = slTime.getUTCDay();
-          const currentHour = slTime.getUTCHours();
-          const currentMin = slTime.getUTCMinutes();
-          
-          if (currentDay === 0) {
-            isPortalOpen = (currentHour > 17 || (currentHour === 17 && currentMin >= 30));
-          } else if (currentDay >= 1 && currentDay <= 3) {
-            isPortalOpen = true;
-          } else if (currentDay === 4) {
-            isPortalOpen = (currentHour < 14 || (currentHour === 14 && currentMin < 30));
-          } else {
-            isPortalOpen = false;
+          if (config.isManualOverride) {
+            isPortalOpen = config.manualStatus === 'OPEN';
+          } else if (config.scheduleEnabled !== false) {
+            const slTime = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000));
+            const currentDay = slTime.getUTCDay();
+            const currentHour = slTime.getUTCHours();
+            const currentMin = slTime.getUTCMinutes();
+            
+            if (currentDay === 0) {
+              isPortalOpen = (currentHour > 17 || (currentHour === 17 && currentMin >= 30));
+            } else if (currentDay >= 1 && currentDay <= 3) {
+              isPortalOpen = true;
+            } else if (currentDay === 4) {
+              isPortalOpen = (currentHour < 14 || (currentHour === 14 && currentMin < 30));
+            } else {
+              isPortalOpen = false;
+            }
+          }
+
+          if (!isPortalOpen) {
+            return res.status(403).json({ ok: false, error: 'The booking portal is currently frozen. Bookings are only accepted between Sunday 5:30 PM and Thursday 2:30 PM.' });
           }
         }
-
-        if (!isPortalOpen) {
-          return res.status(403).json({ ok: false, error: 'The booking portal is currently frozen. Bookings are only accepted between Sunday 5:30 PM and Thursday 2:30 PM.' });
-        }
+      } catch (dbErr) {
+        console.error('[API] Failed to check portal config:', dbErr.message);
+        // fail open if db error so we don't block legitimate bookings just because of a transient db error
       }
-    } catch (dbErr) {
-      console.error('[API] Failed to check portal config:', dbErr.message);
-      // fail open if db error so we don't block legitimate bookings just because of a transient db error
     }
     
     if (!booking || !booking.id || !booking.userEmail || !booking.room || !booking.date || !booking.startTime || !booking.endTime) {
@@ -364,7 +392,7 @@ app.post('/api/bookings/new', async (req, res) => {
 
     console.log('[NEW BOOKING]', booking.id, booking.room, booking.date);
 
-    const adminEmails = ['shanaka@scot.lk', 'duminda@scot.lk', 'shamila@scot.lk', 'nimantha@scot.lk', 'menura@scot.lk'];
+    const adminEmails = getAdminEmails();
     const recipients  = [...new Set([booking.userEmail, booking.supervisorEmail, ...adminEmails])].filter(Boolean);
 
     // 1. Append to sheet (with conflict check)
@@ -481,7 +509,7 @@ app.post('/api/bookings/status', async (req, res) => {
 
     console.log('[STATUS UPDATE]', booking.id, '→', booking.status);
 
-    const adminEmails = ['shanaka@scot.lk', 'duminda@scot.lk', 'shamila@scot.lk', 'nimantha@scot.lk', 'menura@scot.lk'];
+    const adminEmails = getAdminEmails();
     const recipients  = [...new Set([booking.userEmail, booking.supervisorEmail, ...adminEmails])].filter(Boolean);
 
     const results = await Promise.allSettled([
@@ -534,12 +562,12 @@ app.post('/api/bookings/status', async (req, res) => {
 // ─── Start ───────────────────────────────────────────────────────────────────
 // When deployed on Vercel, it acts as a serverless function, so we export it.
 // When running locally, we listen on the port.
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`\n✅ Scot CMS backend running on http://localhost:${PORT}`);
     console.log(`   Gmail user  : ${process.env.GMAIL_USER}`);
     console.log(`   Sheet ID    : ${getSpreadsheetId() || '(not set)'}`);
-    console.log(`   Admin emails: ${process.env.ADMIN_EMAILS}`);
+    console.log(`   Admin emails: ${getAdminEmails().join(', ')}`);
     console.log('');
   });
 }

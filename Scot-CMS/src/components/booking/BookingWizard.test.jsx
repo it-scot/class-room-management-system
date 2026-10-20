@@ -5,6 +5,12 @@ import BookingWizard from './BookingWizard';
 import { AuthContext } from '../../store/AuthContext';
 import { MemoryRouter } from 'react-router-dom';
 
+vi.mock('../../services/firebase', () => ({
+  auth: {},
+  db: {},
+  googleProvider: {}
+}));
+
 vi.mock('../../services/bookingService', () => ({
   createBooking: vi.fn(),
   getConflictingBookings: vi.fn().mockResolvedValue([]),

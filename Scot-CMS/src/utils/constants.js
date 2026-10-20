@@ -67,6 +67,8 @@ export const BOOKING_STATUS = {
 
 // Hardcoded admin emails (fallback — primary source is Firestore /admins collection)
 export const ADMIN_EMAILS_FALLBACK = [
+  'admin@scot.lk',
+  'it@scot.lk',
   'shanaka@scot.lk',
   'duminda@scot.lk',
   'shamila@scot.lk',

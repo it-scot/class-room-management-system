@@ -11,6 +11,8 @@ const AdminLoginPage = ({ onLoginSuccess }) => {
     e.preventDefault();
     
     const allowedAdmins = [
+      'admin@scot.lk',
+      'it@scot.lk',
       'shanaka@scot.lk',
       'duminda@scot.lk',
       'shamila@scot.lk',

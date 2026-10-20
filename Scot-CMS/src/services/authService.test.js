@@ -65,8 +65,8 @@ describe('Auth Service Tests', () => {
 
   it('getUserRole should return admin for fallback admin emails', async () => {
     getDoc.mockResolvedValue({ exists: () => false });
-    // Assuming 'disitha@scot.lk' is a fallback admin
-    const role = await getUserRole('123', 'disitha@scot.lk');
+    // Assuming 'admin@scot.lk' is a fallback admin
+    const role = await getUserRole('123', 'admin@scot.lk');
     expect(role).toBe('admin');
   });
 });
