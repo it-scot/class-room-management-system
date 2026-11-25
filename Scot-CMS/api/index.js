@@ -359,6 +359,8 @@ const safeCompare = (a, b) => {
   return crypto.timingSafeEqual(bufA, bufB);
 };
 
+const hasFirebaseAdmin = () => Array.isArray(admin?.apps) && admin.apps.length > 0;
+
 const getActiveGanttApiKeys = async (forceRefresh = false) => {
   const keys = [];
   if (process.env.GANTT_PUBLIC_API_KEY) {
@@ -366,7 +368,7 @@ const getActiveGanttApiKeys = async (forceRefresh = false) => {
   }
 
   try {
-    if (admin.apps.length > 0) {
+    if (hasFirebaseAdmin()) {
       const now = Date.now();
       if (forceRefresh || now - _cachedFirestoreKey.fetchedAt > API_KEY_CACHE_TTL_MS) {
         const db = getFirestore();
@@ -394,32 +396,37 @@ const getActiveGanttApiKeys = async (forceRefresh = false) => {
 };
 
 const requireGanttApiKey = async (req, res, next) => {
-  const suppliedKey = String(req.headers['x-api-key'] || req.query.apiKey || req.query.key || '').trim();
-  if (!suppliedKey) {
-    return res.status(401).json({ ok: false, error: 'API key required. Pass it via the x-api-key header.' });
+  try {
+    const suppliedKey = String(req.headers['x-api-key'] || req.query.apiKey || req.query.key || '').trim();
+    if (!suppliedKey) {
+      return res.status(401).json({ ok: false, error: 'API key required. Pass it via the x-api-key header.' });
+    }
+
+    let activeKeys = await getActiveGanttApiKeys(false);
+    let matched = activeKeys.some((k) => safeCompare(k, suppliedKey));
+
+    // If mismatch, refresh cache once in case admin just rotated the key
+    if (!matched && hasFirebaseAdmin()) {
+      activeKeys = await getActiveGanttApiKeys(true);
+      matched = activeKeys.some((k) => safeCompare(k, suppliedKey));
+    }
+
+    if (activeKeys.length === 0) {
+      return res.status(503).json({
+        ok: false,
+        error: 'No active Gantt API key is configured on the server. Ask an admin to generate one in the Admin Panel.',
+      });
+    }
+
+    if (!matched) {
+      return res.status(401).json({ ok: false, error: 'Invalid or disabled API key.' });
+    }
+
+    return next();
+  } catch (err) {
+    console.error('[API KEY MIDDLEWARE]', err.message);
+    return res.status(500).json({ ok: false, error: 'API key validation failed.' });
   }
-
-  let activeKeys = await getActiveGanttApiKeys(false);
-  let matched = activeKeys.some((k) => safeCompare(k, suppliedKey));
-
-  // If mismatch, refresh cache once in case admin just rotated the key
-  if (!matched && admin.apps.length > 0) {
-    activeKeys = await getActiveGanttApiKeys(true);
-    matched = activeKeys.some((k) => safeCompare(k, suppliedKey));
-  }
-
-  if (activeKeys.length === 0) {
-    return res.status(503).json({
-      ok: false,
-      error: 'No active Gantt API key is configured on the server. Ask an admin to generate one in the Admin Panel.',
-    });
-  }
-
-  if (!matched) {
-    return res.status(401).json({ ok: false, error: 'Invalid or disabled API key.' });
-  }
-
-  return next();
 };
 
 const sanitizeRoomBooking = (id, d) => ({
@@ -469,7 +476,7 @@ const fetchActiveRoomBookings = async (filterDate = null) => {
 
   // 1. Primary: Firestore via firebase-admin
   try {
-    if (admin.apps.length > 0) {
+    if (hasFirebaseAdmin()) {
       const db = getFirestore();
       let queryRef = db.collection('bookings');
       if (filterDate) {
@@ -531,7 +538,7 @@ const fetchActiveEquipmentBookings = async (filterDate = null) => {
 
   // 1. Primary: Firestore via firebase-admin
   try {
-    if (admin.apps.length > 0) {
+    if (hasFirebaseAdmin()) {
       const db = getFirestore();
       let queryRef = db.collection('equipment_bookings');
       if (filterDate) {
@@ -663,7 +670,7 @@ app.get('/api/gantt/stream', requireGanttApiKey, async (req, res) => {
     res.write(': heartbeat\n\n');
   }, 20000);
 
-  if (admin.apps.length > 0) {
+  if (hasFirebaseAdmin()) {
     try {
       const db = getFirestore();
       unsubRooms = db.collection('bookings').onSnapshot(
