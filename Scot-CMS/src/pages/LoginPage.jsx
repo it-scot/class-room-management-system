@@ -56,7 +56,7 @@ const LoginPage = () => {
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shadow-2xl shadow-primary-500/40 mb-4">
               <span className="text-white font-black text-2xl">S</span>
             </div>
-            <h1 className="text-2xl font-bold text-white text-center">Scot Classroom</h1>
+            <h1 className="text-2xl font-bold text-white text-center">SCOT Facility</h1>
             <p className="text-sm text-slate-400 mt-1 text-center">Management System</p>
           </div>
 

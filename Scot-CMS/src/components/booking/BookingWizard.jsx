@@ -1,7 +1,7 @@
 // src/components/booking/BookingWizard.jsx
 // 4-step multi-step booking form with progress indicator.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -12,50 +12,44 @@ import Step4Confirm  from './Step4Confirm';
 
 import { createBooking, getRoomBookingsForDate, deleteBooking } from '../../services/bookingService';
 import { validateBooking }        from '../../utils/validators';
+import { getRoomDetails }         from '../../utils/constants';
 import { useAuth }                from '../../store/AuthContext';
-
 import { sendNewBookingEmail }    from '../../services/emailService';
 
-
-const STEPS = ['Building', 'Room', 'Details', 'Confirm'];
+const STEPS = ['Building', 'Room', 'Details', 'Review'];
 
 const BookingWizard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-
-  const [step,    setStep]    = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [errors,  setErrors]  = useState({});
   const [searchParams] = useSearchParams();
 
   // Support deep-link: ?building=B&room=X&date=Y&start=Z
-  const initialRoom = searchParams.get('room') || '';
+  const initialRoom     = searchParams.get('room') || '';
   const initialBuilding = searchParams.get('building') || '';
+  const initialDate     = searchParams.get('date') || '';
+  const initialStart    = searchParams.get('start') || '';
+
+  const [step,    setStep]    = useState(
+    () => (initialBuilding && initialRoom && initialDate && initialStart ? 2 : 0)
+  );
+  const [loading, setLoading] = useState(false);
+  const [errors,  setErrors]  = useState({});
 
   const [formData, setFormData] = useState({
-    building:          initialBuilding,
-    rooms:             initialRoom ? [initialRoom] : [],   // ← array
-    date:              searchParams.get('date') || '',
-    startTime:         searchParams.get('start') || '',
-    endTime:           '',
-    seats:             '',
-    reason:            '',
-    supervisorEmail:   '',
-    inPersonLecturers: [],
-    department:        '',
-    programmeName:     '',
-    generatorRequired: false,
-    generatorReason:   '',
-    extensionCordRequired: false,
-    monitorRequired: false,
+    building:           initialBuilding,
+    rooms:              initialRoom ? [initialRoom] : [],
+    date:               initialDate,
+    startTime:          initialStart,
+    endTime:            '',
+    seats:              '',
+    reasonCategory:     '',
+    customReason:       '',
+    reason:             '',
+    specialRequirement: '',
+    supervisorEmail:    '',
+    bookForEmails:      [],
+    department:         '',
   });
-
-  // If deep-linked with building+room+date+start, jump straight to Step 3
-  useEffect(() => {
-    if (initialBuilding && initialRoom && formData.date && formData.startTime) {
-      setStep(2);
-    }
-  }, []);
 
   const update = (fields) => setFormData(prev => ({ ...prev, ...fields }));
 
@@ -77,11 +71,17 @@ const BookingWizard = () => {
 
     try {
       const rooms = formData.rooms;
+      const resolvedReason =
+        formData.reasonCategory === 'Other'
+          ? (formData.customReason || formData.reason || '').trim()
+          : (formData.reasonCategory || formData.reason || '').trim();
 
-      // ── 1. Field-level validation (date, time, seats, etc.) ───────────────
+      // ── 1. Field-level validation (date, time, 1hr buffer, seats, etc.) ───
       const { valid, errors: fieldErrs } = validateBooking({
         ...formData,
+        reason: resolvedReason,
         existingBookings: [],
+        rooms,
         room: rooms[0],
       });
 
@@ -96,7 +96,9 @@ const BookingWizard = () => {
           );
           const { errors: errs } = validateBooking({
             ...formData,
+            reason: resolvedReason,
             existingBookings: existing,
+            rooms: [room],
             room,
           });
           if (errs.overlap) overlapErrors.push(`${room}: ${errs.overlap}`);
@@ -108,33 +110,44 @@ const BookingWizard = () => {
         if (overlapErrors.length > 0) combined.overlap = overlapErrors.join('\n');
         setErrors(combined);
         setLoading(false);
-        if (fieldErrs.date || fieldErrs.startTime || fieldErrs.endTime || overlapErrors.length > 0) setStep(2);
+        setStep(2);
         return;
       }
 
       // ── 3. Create one booking doc per room in parallel ────────────────────
+      const bookForList = (formData.bookForEmails || []).map(e => e.trim().toLowerCase()).filter(Boolean);
+      const bookForStr = bookForList.join(', ');
+
       const commonPayload = {
-        userId:            user.uid,
-        userEmail:         user.email,
-        userName:          user.displayName || user.email,
-        building:          formData.building,
-        date:              formData.date,
-        startTime:         formData.startTime,
-        endTime:           formData.endTime,
-        seats:             Number(formData.seats),
-        reason:            formData.reason.trim(),
-        supervisorEmail:   formData.supervisorEmail.trim().toLowerCase(),
-        inPersonLecturers: formData.inPersonLecturers.join(', '),
-        department:        formData.department,
-        programmeName:     formData.programmeName,
-        generatorRequired: formData.generatorRequired,
-        generatorReason:   formData.generatorRequired ? formData.generatorReason : '',
-        extensionCordRequired: formData.extensionCordRequired,
-        monitorRequired: formData.monitorRequired,
+        userId:             user.uid,
+        userEmail:          user.email,
+        userName:           user.displayName || user.email,
+        building:           formData.building,
+        date:               formData.date,
+        startTime:          formData.startTime,
+        endTime:            formData.endTime,
+        reason:             resolvedReason,
+        specialRequirement: (formData.specialRequirement || '').trim(),
+        supervisorEmail:    formData.supervisorEmail.trim().toLowerCase(),
+        bookForEmails:      bookForList,
+        bookedFor:          bookForStr,
+        inPersonLecturers:  bookForStr, // backward-compatible field name
+        department:         formData.department,
       };
 
+      const perRoomPayloads = rooms.map(room => {
+        const details = getRoomDetails(formData.building, room);
+        const seatCount = details.expandable ? Number(formData.seats) : details.maxCapacity;
+        return {
+          ...commonPayload,
+          room,
+          seats: seatCount,
+          roomType: details.expandable ? 'Expandable' : 'Non-Expandable',
+        };
+      });
+
       const results = await withTimeout(
-        Promise.allSettled(rooms.map(room => createBooking({ ...commonPayload, room }))),
+        Promise.allSettled(perRoomPayloads.map(payload => createBooking(payload))),
         10000,
         null
       );
@@ -162,14 +175,12 @@ const BookingWizard = () => {
 
       const bookingIds = successfulIds;
 
-      // ── 4. Fire email (backend handles sheet row too) ─────────────────────
-      // We process these one by one or in parallel, but we must check for errors
+      // ── 4. Fire email & sheet update (backend handles calendar invite + dayananda@scot.lk trigger) ──
       const emailResults = await Promise.allSettled(
         bookingIds.map((bookingId, idx) => {
           const payload = {
-            ...commonPayload,
+            ...perRoomPayloads[idx],
             id:     bookingId,
-            room:   rooms[idx],
             status: 'Approved',
           };
           return sendNewBookingEmail(payload);
@@ -177,27 +188,25 @@ const BookingWizard = () => {
       );
 
       const failedEmails = emailResults.filter(r => r.status === 'rejected');
-      
+
       if (failedEmails.length > 0) {
         // Rollback Firestore if backend fails (e.g., due to double booking in sheet)
         await Promise.all(bookingIds.map(id => deleteBooking(id)));
-        
+
         const errorMsg = failedEmails[0].reason?.message || 'Conflict detected. This slot might have just been taken.';
         throw new Error(errorMsg);
       }
 
-
       const roomLabel = rooms.length === 1 ? rooms[0] : `${rooms.length} rooms`;
-      toast.success(`✅ ${roomLabel} booked successfully and added to your calendar!`, { duration: 5000 });
+      toast.success(`✅ ${roomLabel} booked! Calendar invitation sent.`, { duration: 5000 });
 
       navigate('/');
     } catch (err) {
       console.error('[handleSubmit]', err);
       toast.error(err.message || 'Failed to submit booking. Please try again.');
-      // If we got here and have errors, maybe stay on Step 2 if it's a conflict
-      if (err.message.includes('booked') || err.message.includes('slot')) {
+      if (err.message?.includes('booked') || err.message?.includes('slot')) {
         setErrors({ overlap: err.message });
-        setStep(1); // Step 1 is Room & Time
+        setStep(2);
       }
     } finally {
       setLoading(false);
@@ -209,7 +218,7 @@ const BookingWizard = () => {
   const stepProps = { formData, update, errors, setErrors };
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-3xl mx-auto">
       {/* Progress bar */}
       <div className="flex items-center mb-6 sm:mb-8 gap-0">
         {STEPS.map((label, i) => (

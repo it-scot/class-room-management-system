@@ -36,15 +36,24 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ─── Bookings ─────────────────────────────────────────────────────────
+    // ─── Room Bookings (Public Read for /gantt mobile schedule view) ──────
     match /bookings/{bookingId} {
-      allow read:   if isScotUser();
+      allow read:   if true;
       allow create: if isScotUser() &&
                        request.resource.data.userId == request.auth.uid &&
                        request.resource.data.status == 'Approved';
       // Admins can update anything; users can only update to Cancelled
       allow update: if isAdmin() || (isOwner(resource.data.userId) && request.resource.data.status == 'Cancelled');
       // User can delete own booking; admin can delete any
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // ─── Equipment Bookings ───────────────────────────────────────────────
+    match /equipment_bookings/{bookingId} {
+      allow read:   if isScotUser();
+      allow create: if isScotUser() &&
+                       request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || (isOwner(resource.data.userId) && request.resource.data.status == 'Cancelled');
       allow delete: if isOwner(resource.data.userId) || isAdmin();
     }
 
@@ -61,7 +70,7 @@ service cloud.firestore {
 
     // ─── Settings ─────────────────────────────────────────────────────────
     match /settings/{document=**} {
-      allow read:   if true; // Anyone can read portalConfig to know if it's locked
+      allow read:   if true;
       allow write:  if isAdmin();
     }
   }

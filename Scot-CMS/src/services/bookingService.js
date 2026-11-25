@@ -124,12 +124,19 @@ export const getRoomBookingsForDate = async (building, room, date) => {
  * Subscribe to all bookings in real-time (for dashboard).
  * Returns unsubscribe function.
  */
-export const subscribeToAllBookings = (callback) => {
+export const subscribeToAllBookings = (callback, onError) => {
   const q = query(collection(db, BOOKINGS_COL), orderBy('createdAt', 'desc'));
-  return onSnapshot(q, (snap) => {
-    const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(bookings);
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      callback(bookings);
+    },
+    (err) => {
+      console.error('[subscribeToAllBookings] Firestore listener error:', err);
+      if (onError) onError(err);
+    }
+  );
 };
 
 /**

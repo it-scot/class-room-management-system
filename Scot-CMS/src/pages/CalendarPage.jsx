@@ -73,7 +73,7 @@ const CalendarPage = () => {
   const handleDayClick = (date) => {
     const dStr = format(date, 'yyyy-MM-dd');
     if (isBeforeMinBookingDate(dStr)) {
-      toast.error("You must book at least 2 days in advance.", {
+      toast.error("Cannot book a date in the past.", {
         icon: '📅',
         style: {
           borderRadius: '10px',
@@ -235,11 +235,17 @@ const BookingDetailView = ({ booking: b }) => (
     <DetailRow icon={BuildingOffice2Icon} label="Building" value={b.building} />
     <DetailRow icon={CalendarDaysIcon} label="Date" value={formatDate(b.date)} />
     <DetailRow icon={ClockIcon} label="Time" value={`${b.startTime} – ${b.endTime}`} />
-    <DetailRow icon={UserIcon} label="Booked by" value={b.userName || b.userEmail} />
+    <DetailRow icon={UserIcon} label="Booked By" value={b.userName || b.userEmail} />
+    {(b.bookedFor || b.inPersonLecturers) && (
+      <DetailRow icon={UserIcon} label="Book For" value={b.bookedFor || b.inPersonLecturers} />
+    )}
     <DetailRow icon={UserIcon} label="Supervisor" value={b.supervisorEmail} />
-    {b.inPersonLecturers && <DetailRow icon={UserIcon} label="In Person" value={b.inPersonLecturers} />}
+    {b.department && <DetailRow icon={AcademicCapIcon} label="Department" value={b.department} />}
     <DetailRow icon={AcademicCapIcon} label="Seats" value={b.seats} />
     <DetailRow icon={AcademicCapIcon} label="Reason" value={b.reason} />
+    {b.specialRequirement && (
+      <DetailRow icon={AcademicCapIcon} label="Special Requirement" value={b.specialRequirement} />
+    )}
   </div>
 );
 

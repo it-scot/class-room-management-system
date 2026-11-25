@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import Modal from '../common/Modal';
 import { TIME_SLOTS, BUILDINGS, BOOKING_STATUS } from '../../utils/constants';
-import { formatDate } from '../../utils/dateHelpers';
+import { formatDate, isWithinOneHourBuffer } from '../../utils/dateHelpers';
 import Badge from '../common/Badge';
 import { CheckCircleIcon, XCircleIcon, ClockIcon, UserIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
 import { Link } from 'react-router-dom';
@@ -112,12 +112,18 @@ const DayViewModal = ({ isOpen, onClose, date, bookings }) => {
                           </p>
                         </div>
                       </div>
-                      <Link
-                        to={`/book?date=${date}&building=${encodeURIComponent(selectedLocation.building)}&room=${encodeURIComponent(selectedLocation.room)}&start=${block.startTime}`}
-                        className="btn-success btn-sm w-full sm:w-auto text-center"
-                      >
-                        Book This Time
-                      </Link>
+                      {isWithinOneHourBuffer(date, block.startTime) ? (
+                        <span className="text-xs text-slate-500 bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg text-center">
+                          1h buffer required
+                        </span>
+                      ) : (
+                        <Link
+                          to={`/book?date=${date}&building=${encodeURIComponent(selectedLocation.building)}&room=${encodeURIComponent(selectedLocation.room)}&start=${block.startTime}`}
+                          className="btn-success btn-sm w-full sm:w-auto text-center"
+                        >
+                          Book This Time
+                        </Link>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-col p-3 sm:p-4 rounded-xl border border-red-500/20 bg-red-500/5 space-y-4">
@@ -151,10 +157,16 @@ const DayViewModal = ({ isOpen, onClose, date, bookings }) => {
                                 <AcademicCapIcon className="w-3.5 h-3.5 shrink-0" />
                                 {booking.reason}
                               </p>
-                              {booking.programmeName && (
+                              {(booking.bookedFor || booking.inPersonLecturers) && (
+                                <p className="text-xs text-emerald-300 flex items-center gap-1.5 truncate">
+                                  <UserIcon className="w-3.5 h-3.5 shrink-0" />
+                                  Book For: {booking.bookedFor || booking.inPersonLecturers}
+                                </p>
+                              )}
+                              {booking.department && (
                                 <p className="text-xs text-slate-400 flex items-center gap-1.5 truncate">
                                   <UserIcon className="w-3.5 h-3.5 shrink-0" />
-                                  Programme: {booking.programmeName}
+                                  Department: {booking.department}
                                 </p>
                               )}
                             </div>

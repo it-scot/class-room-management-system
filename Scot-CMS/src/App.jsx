@@ -5,18 +5,20 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
-import { AuthProvider } from './store/AuthContext';
+import { AuthProvider, useAuth } from './store/AuthContext';
 import ProtectedRoute   from './components/layout/ProtectedRoute';
 import Navbar           from './components/layout/Navbar';
+import Spinner          from './components/common/Spinner';
 
-import LoginPage      from './pages/LoginPage';
-import DashboardPage  from './pages/DashboardPage';
-import BookingPage    from './pages/BookingPage';
-import MyBookingsPage from './pages/MyBookingsPage';
-import AdminPanel     from './pages/AdminPanel';
-import AdminLoginPage from './pages/AdminLoginPage';
-import CalendarPage   from './pages/CalendarPage';
-import GanttChartPage from './pages/GanttChartPage';
+import LoginPage         from './pages/LoginPage';
+import DashboardPage     from './pages/DashboardPage';
+import BookingPage       from './pages/BookingPage';
+import BookEquipmentPage from './pages/BookEquipmentPage';
+import MyBookingsPage    from './pages/MyBookingsPage';
+import AdminPanel        from './pages/AdminPanel';
+import AdminLoginPage    from './pages/AdminLoginPage';
+import CalendarPage      from './pages/CalendarPage';
+import GanttChartPage    from './pages/GanttChartPage';
 
 const Layout = ({ children }) => {
   const currentYear = new Date().getFullYear();
@@ -26,7 +28,7 @@ const Layout = ({ children }) => {
       <main className="flex-1 pb-12">{children}</main>
       <footer className="w-full py-6 mt-auto text-center text-sm text-slate-400 border-t border-white/5 bg-[#0B0F19]/50 backdrop-blur-sm">
         <p>
-          &copy; {currentYear} Scot Campus Class-Room Booking System. Developed by{' '}
+          &copy; {currentYear} SCOT Facility Management System. Developed by{' '}
           <a
             href="https://disitha-profile.web.app/"
             target="_blank"
@@ -39,6 +41,29 @@ const Layout = ({ children }) => {
       </footer>
     </div>
   );
+};
+
+// Public View-Only Gantt Route for Security & Supporting Staff; full Layout if logged in
+const GanttRoute = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface-900">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return (
+      <Layout>
+        <GanttChartPage isPublicView={false} />
+      </Layout>
+    );
+  }
+
+  return <GanttChartPage isPublicView={true} />;
 };
 
 const AdminRoute = () => {
@@ -80,6 +105,9 @@ const App = () => (
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
 
+        {/* Public View-Only Gantt Chart (or full layout if logged in) */}
+        <Route path="/gantt" element={<GanttRoute />} />
+
         {/* Protected by Google Auth */}
         <Route path="/" element={
           <ProtectedRoute>
@@ -91,14 +119,14 @@ const App = () => (
             <Layout><CalendarPage /></Layout>
           </ProtectedRoute>
         } />
-        <Route path="/gantt" element={
-          <ProtectedRoute>
-            <Layout><GanttChartPage /></Layout>
-          </ProtectedRoute>
-        } />
         <Route path="/book" element={
           <ProtectedRoute>
             <Layout><BookingPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/book-equipment" element={
+          <ProtectedRoute>
+            <Layout><BookEquipmentPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/my-bookings" element={

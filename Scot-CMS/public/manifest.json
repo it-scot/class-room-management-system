@@ -1,0 +1,16 @@
+{
+  "name": "SCOT Facility Management System",
+  "short_name": "SCOT FMS",
+  "description": "Live classroom schedule, room booking, and equipment booking for SCOT.",
+  "start_url": "/gantt",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

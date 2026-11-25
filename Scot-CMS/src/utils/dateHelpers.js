@@ -1,7 +1,7 @@
 // src/utils/dateHelpers.js
 // Utility functions for date/time manipulation.
 
-import { format, isAfter, isBefore, parseISO, isToday, startOfDay, addDays } from 'date-fns';
+import { format, isBefore, parseISO, startOfDay, addDays } from 'date-fns';
 
 /**
  * Format a date string or Date object.
@@ -30,10 +30,34 @@ export const formatTimestamp = (ts, fmt = 'dd MMM yyyy, hh:mm a') => {
  */
 export const isPastDateTime = (dateStr, timeStr) => {
   if (!dateStr || !timeStr) return false;
-  const [year, month, day]   = dateStr.split('-').map(Number);
-  const [hour, minute]       = timeStr.split(':').map(Number);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, minute]     = timeStr.split(':').map(Number);
   const dt = new Date(year, month - 1, day, hour, minute);
   return isBefore(dt, new Date());
+};
+
+/**
+ * Check if a given date+time is within the 1-hour buffer from current timestamp.
+ * Users booking for today (or any date) can only select times at least 1 hour after now.
+ * @param {string} dateStr - YYYY-MM-DD
+ * @param {string} timeStr - HH:MM
+ * @param {Date} now
+ */
+export const isWithinOneHourBuffer = (dateStr, timeStr, now = new Date()) => {
+  if (!dateStr || !timeStr) return false;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, minute]     = timeStr.split(':').map(Number);
+  const dt = new Date(year, month - 1, day, hour, minute);
+  const minAllowedTime = new Date(now.getTime() + 60 * 60 * 1000);
+  return dt.getTime() < minAllowedTime.getTime();
+};
+
+/**
+ * Filter TIME_SLOTS for a selected booking date, applying the 1-hour buffer.
+ */
+export const getAvailableStartSlots = (dateStr, allSlots, now = new Date()) => {
+  if (!dateStr) return allSlots;
+  return allSlots.filter(t => !isWithinOneHourBuffer(dateStr, t, now));
 };
 
 /**
@@ -66,18 +90,33 @@ export const toMinutes = (time) => {
 export const todayStr = () => format(new Date(), 'yyyy-MM-dd');
 
 /**
- * Return the minimum allowed booking date (today + 2 days).
+ * Return the minimum allowed room booking date (today — 2-day freeze removed).
  */
 export const getMinBookingDate = () => {
-  return startOfDay(addDays(new Date(), 2));
+  return startOfDay(new Date());
 };
 
 /**
- * Check if a date string is before the minimum allowed booking date.
+ * Check if a date string is before the minimum allowed room booking date (strictly before today).
  */
 export const isBeforeMinBookingDate = (dateStr) => {
   if (!dateStr) return false;
   return isBefore(startOfDay(parseISO(dateStr)), getMinBookingDate());
+};
+
+/**
+ * Return the minimum allowed equipment booking date (today + 3 days).
+ */
+export const getMinEquipmentBookingDate = () => {
+  return startOfDay(addDays(new Date(), 3));
+};
+
+/**
+ * Check if a date string is before the minimum allowed equipment booking date (3-day advance rule).
+ */
+export const isBeforeMinEquipmentBookingDate = (dateStr) => {
+  if (!dateStr) return false;
+  return isBefore(startOfDay(parseISO(dateStr)), getMinEquipmentBookingDate());
 };
 
 /**
