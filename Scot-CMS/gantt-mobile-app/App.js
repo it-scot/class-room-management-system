@@ -52,9 +52,11 @@ export default function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
 
   const [buildings, setBuildings] = useState(DEFAULT_BUILDINGS);
-  const [bookings, setBookings] = useState(() => buildPreviewData(getTodayStr()).bookings);
-  const [equipmentBookings, setEquipmentBookings] = useState(
-    () => buildPreviewData(getTodayStr()).equipmentBookings
+  const [bookings, setBookings] = useState(() =>
+    DEFAULT_GANTT_API_KEY ? [] : buildPreviewData(getTodayStr()).bookings
+  );
+  const [equipmentBookings, setEquipmentBookings] = useState(() =>
+    DEFAULT_GANTT_API_KEY ? [] : buildPreviewData(getTodayStr()).equipmentBookings
   );
   const [syncStatus, setSyncStatus] = useState(DEFAULT_GANTT_API_KEY ? 'connecting' : 'preview');
 
@@ -93,8 +95,10 @@ export default function App() {
         ]);
         if (savedApi) {
           const parsed = JSON.parse(savedApi);
-          if (parsed.portalUrl) setPortalUrl(parsed.portalUrl);
-          if (parsed.apiKey) setApiKey(parsed.apiKey);
+          if (parsed.apiKey && parsed.portalUrl) {
+            setPortalUrl(parsed.portalUrl);
+            setApiKey(parsed.apiKey);
+          }
         }
         if (savedRooms) setReadyRoomsByDate(JSON.parse(savedRooms));
         if (savedEq) setReadyEqIds(JSON.parse(savedEq));
