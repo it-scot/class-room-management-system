@@ -1,12 +1,18 @@
 // src/pages/AdminPanel.jsx
 // Admin panel: manage Room Bookings & Equipment Bookings, approve/reject,
-// share Public Gantt view link, and download Excel (.xlsx) & CSV reports.
+// manage read-only Gantt Mobile App API Key, and download Excel (.xlsx) & CSV reports.
 
 import React, { useState, useMemo } from 'react';
 import { useBookings }           from '../hooks/useBookings';
 import { useAllEquipmentBookings } from '../hooks/useEquipmentBookings';
+import { useAuth }               from '../store/AuthContext';
 import { updateBookingStatus }   from '../services/bookingService';
 import { updateEquipmentBookingStatus } from '../services/equipmentBookingService';
+import {
+  getGanttApiKeyConfig,
+  rotateGanttApiKey,
+  setGanttApiKeyActive,
+} from '../services/apiKeyService';
 import {
   sendStatusUpdateEmail,
   sendEquipmentStatusUpdateEmail,
@@ -31,7 +37,11 @@ import {
   ArrowDownTrayIcon,
   AcademicCapIcon,
   WrenchScrewdriverIcon,
-  ShareIcon,
+  KeyIcon,
+  ClipboardDocumentIcon,
+  ArrowPathIcon,
+  EyeIcon,
+  EyeSlashIcon,
   TableCellsIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -39,6 +49,7 @@ import toast from 'react-hot-toast';
 const STATUS_FILTERS = ['All', BOOKING_STATUS.PENDING, BOOKING_STATUS.APPROVED, BOOKING_STATUS.REJECTED, BOOKING_STATUS.CANCELLED];
 
 const AdminPanel = () => {
+  const { user } = useAuth();
   const { bookings: roomBookings, loading: roomsLoading } = useBookings(true);
   const { bookings: equipmentBookings, loading: eqLoading } = useAllEquipmentBookings();
 
@@ -48,6 +59,13 @@ const AdminPanel = () => {
   const [dateFrom,  setDateFrom]  = useState('');
   const [dateTo,    setDateTo]    = useState('');
   const [updating,  setUpdating]  = useState({});
+
+  // API Key modal state
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
+  const [apiKeyConfig, setApiKeyConfig]       = useState(null);
+  const [apiKeyLoading, setApiKeyLoading]     = useState(false);
+  const [apiKeyBusy, setApiKeyBusy]           = useState(false);
+  const [showApiKey, setShowApiKey]           = useState(false);
 
   // Modal state
   const [actionModal, setActionModal] = useState({ isOpen: false, bookingId: null, status: null, type: 'room' });
@@ -100,13 +118,57 @@ const AdminPanel = () => {
     return list;
   }, [equipmentBookings, filter, search, dateFrom, dateTo]);
 
-  const handleCopyGanttLink = async () => {
-    const url = `${window.location.origin}/gantt`;
+  const openApiKeyModal = async () => {
+    setApiKeyModalOpen(true);
+    setApiKeyLoading(true);
     try {
-      await navigator.clipboard.writeText(url);
-      toast.success('Public Gantt URL copied for Security & Supporting Staff!');
+      const cfg = await getGanttApiKeyConfig();
+      setApiKeyConfig(cfg);
+    } catch (err) {
+      console.error('[API Key Load]', err);
+      toast.error('Unable to load API key. Ensure you are signed in with an Admin @scot.lk account.');
+    } finally {
+      setApiKeyLoading(false);
+    }
+  };
+
+  const handleRotateApiKey = async () => {
+    setApiKeyBusy(true);
+    try {
+      const updated = await rotateGanttApiKey(user?.email || 'admin@scot.lk');
+      setApiKeyConfig(updated);
+      setShowApiKey(true);
+      toast.success('New Gantt Mobile API key generated!');
+    } catch (err) {
+      console.error('[API Key Rotate]', err);
+      toast.error('Failed to generate API key. Please ensure you are signed in as an admin.');
+    } finally {
+      setApiKeyBusy(false);
+    }
+  };
+
+  const handleToggleApiKeyActive = async () => {
+    if (!apiKeyConfig) return;
+    setApiKeyBusy(true);
+    try {
+      const nextActive = !apiKeyConfig.active;
+      await setGanttApiKeyActive(nextActive, user?.email || 'admin@scot.lk');
+      setApiKeyConfig((prev) => ({ ...prev, active: nextActive }));
+      toast.success(nextActive ? 'API key enabled.' : 'API key disabled — mobile app access paused.');
+    } catch (err) {
+      console.error('[API Key Toggle]', err);
+      toast.error('Failed to update API key status.');
+    } finally {
+      setApiKeyBusy(false);
+    }
+  };
+
+  const copyText = async (text, label) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied!`);
     } catch {
-      toast.success(`Public Gantt URL: ${url}`);
+      toast.success(`${label}: ${text}`);
     }
   };
 
@@ -215,12 +277,13 @@ const AdminPanel = () => {
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <button
             type="button"
-            onClick={handleCopyGanttLink}
+            id="manage-gantt-api-key-btn"
+            onClick={openApiKeyModal}
             className="btn-secondary btn-sm flex items-center gap-1.5"
-            title="Copy public view-only schedule link for Security & Support Staff"
+            title="Generate or copy the read-only API key for the Gantt Mobile App"
           >
-            <ShareIcon className="w-4 h-4 text-emerald-400" />
-            Copy Public Gantt Link
+            <KeyIcon className="w-4 h-4 text-amber-400" />
+            Gantt API Key
           </button>
 
           {activeTab === 'rooms' ? (
@@ -607,6 +670,143 @@ const AdminPanel = () => {
               Confirm
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Gantt Mobile App API Key Modal */}
+      <Modal
+        isOpen={apiKeyModalOpen}
+        onClose={() => setApiKeyModalOpen(false)}
+        title="Gantt Mobile App API Key"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl bg-primary-500/10 border border-primary-500/25 p-3.5 text-xs text-slate-300 space-y-1">
+            <p className="font-semibold text-primary-300">Read-Only Scoped Access</p>
+            <p>
+              Use this key to connect the standalone mobile schedule app without sharing access to this internal employee portal. It only allows reading live classroom Gantt schedules and equipment lists.
+            </p>
+          </div>
+
+          {apiKeyLoading ? (
+            <div className="py-8 flex justify-center">
+              <Spinner size="md" />
+            </div>
+          ) : !apiKeyConfig?.key ? (
+            <div className="rounded-xl bg-surface-800/80 border border-white/10 p-5 text-center space-y-3">
+              <KeyIcon className="w-8 h-8 text-amber-400 mx-auto" />
+              <div>
+                <p className="text-sm font-semibold text-white">No API Key Generated Yet</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Generate a secure key to connect your mobile schedule viewer app.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRotateApiKey}
+                disabled={apiKeyBusy}
+                className="btn-primary btn-sm mx-auto"
+              >
+                {apiKeyBusy ? <Spinner size="sm" /> : <KeyIcon className="w-4 h-4" />}
+                Generate API Key
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Status & Toggle */}
+              <div className="flex items-center justify-between bg-surface-800/70 border border-white/10 rounded-xl px-3.5 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      apiKeyConfig.active ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-red-400'
+                    }`}
+                  />
+                  <span className="text-xs font-semibold text-white">
+                    {apiKeyConfig.active ? 'Active (Read-Only Gantt + Equipment)' : 'Disabled'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleApiKeyActive}
+                  disabled={apiKeyBusy}
+                  className={`btn btn-sm ${apiKeyConfig.active ? 'btn-danger' : 'btn-success'}`}
+                >
+                  {apiKeyConfig.active ? 'Disable Key' : 'Enable Key'}
+                </button>
+              </div>
+
+              {/* Key value */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  API Key (`x-api-key`)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    readOnly
+                    value={apiKeyConfig.key}
+                    className="input font-mono text-xs flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey((v) => !v)}
+                    className="btn-secondary btn-sm shrink-0"
+                    title={showApiKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showApiKey ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copyText(apiKeyConfig.key, 'API Key')}
+                    className="btn-primary btn-sm shrink-0"
+                    title="Copy API key"
+                  >
+                    <ClipboardDocumentIcon className="w-4 h-4" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* Portal API Base URL */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Portal Server URL (for Mobile App Setup)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={window.location.origin}
+                    className="input font-mono text-xs flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => copyText(window.location.origin, 'Portal URL')}
+                    className="btn-secondary btn-sm shrink-0"
+                  >
+                    <ClipboardDocumentIcon className="w-4 h-4" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* Rotate Key */}
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-3">
+                <p className="text-[11px] text-slate-400">
+                  Rotating immediately revokes the previous key on all mobile devices.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleRotateApiKey}
+                  disabled={apiKeyBusy}
+                  className="btn-secondary btn-sm shrink-0 flex items-center gap-1.5"
+                >
+                  <ArrowPathIcon className={`w-4 h-4 ${apiKeyBusy ? 'animate-spin' : ''}`} />
+                  Rotate Key
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

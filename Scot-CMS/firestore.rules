@@ -36,9 +36,9 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ─── Room Bookings (Public Read for /gantt mobile schedule view) ──────
+    // ─── Room Bookings (Internal @scot.lk employees only) ─────────────────
     match /bookings/{bookingId} {
-      allow read:   if true;
+      allow read:   if isScotUser();
       allow create: if isScotUser() &&
                        request.resource.data.userId == request.auth.uid &&
                        request.resource.data.status == 'Approved';
@@ -68,9 +68,14 @@ service cloud.firestore {
       allow write:  if isAdmin();
     }
 
+    // ─── API Keys (Admin-only management for external read-only Gantt app) ──
+    match /api_keys/{keyId} {
+      allow read, write: if isAdmin();
+    }
+
     // ─── Settings ─────────────────────────────────────────────────────────
     match /settings/{document=**} {
-      allow read:   if true;
+      allow read:   if isScotUser();
       allow write:  if isAdmin();
     }
   }

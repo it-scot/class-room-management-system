@@ -320,33 +320,21 @@ describe('End-to-End Requirement Verification', () => {
     expect(screen.getByText('Need markers')).toBeInTheDocument();
   });
 
-    it('GanttChartPage public view renders mobile-first security schedule, visual Gantt, alerts, and PDF download', () => {
+    it('GanttChartPage renders clean internal Gantt Chart without Staff Mobile View, Phone Alerts, or Share Link', () => {
       render(
         <MemoryRouter>
-          <GanttChartPage isPublicView={true} />
+          <GanttChartPage />
         </MemoryRouter>
       );
 
-      expect(screen.getByText(/Live Schedule · Security & Support Staff/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Enable Phone Alerts/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Download Daily PDF/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Staff Cards/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Visual Gantt/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Building 1/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Building 2/i })).toBeInTheDocument();
+      expect(screen.getByText(/Gantt Chart View/i)).toBeInTheDocument();
+      expect(screen.getByText(/Daily Classroom Schedule/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument();
 
-      // Switch to Staff Cards view and check Board Room & Mark Ready button
-      fireEvent.click(screen.getByRole('button', { name: /Staff Cards/i }));
-      expect(screen.getAllByText('Board Room').length).toBeGreaterThan(0);
-      expect(screen.getAllByRole('button', { name: /Mark Ready/i }).length).toBeGreaterThan(0);
-
-      // Switch to Horizontal Visual Gantt view
-      fireEvent.click(screen.getByRole('button', { name: /Visual Gantt/i }));
-      expect(screen.getByText(/Visual Classroom Timeline/i)).toBeInTheDocument();
-
-      // Should NOT show navigation links like Book Room or Book Equipment
-      expect(screen.queryByText('Book Room')).not.toBeInTheDocument();
-      expect(screen.queryByText('Book Equipment')).not.toBeInTheDocument();
+      // Removed portal buttons MUST NOT exist
+      expect(screen.queryByRole('button', { name: /Staff Mobile View/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Enable Phone Alerts/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Share Link/i })).not.toBeInTheDocument();
     });
 
     it('BookEquipmentPage renders summary analytics, equipment items, and 3-day policy', () => {

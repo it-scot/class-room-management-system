@@ -5,10 +5,9 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
-import { AuthProvider, useAuth } from './store/AuthContext';
+import { AuthProvider } from './store/AuthContext';
 import ProtectedRoute   from './components/layout/ProtectedRoute';
 import Navbar           from './components/layout/Navbar';
-import Spinner          from './components/common/Spinner';
 
 import LoginPage         from './pages/LoginPage';
 import DashboardPage     from './pages/DashboardPage';
@@ -41,29 +40,6 @@ const Layout = ({ children }) => {
       </footer>
     </div>
   );
-};
-
-// Public View-Only Gantt Route for Security & Supporting Staff; full Layout if logged in
-const GanttRoute = () => {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-900">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  if (user) {
-    return (
-      <Layout>
-        <GanttChartPage isPublicView={false} />
-      </Layout>
-    );
-  }
-
-  return <GanttChartPage isPublicView={true} />;
 };
 
 const AdminRoute = () => {
@@ -105,9 +81,6 @@ const App = () => (
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* Public View-Only Gantt Chart (or full layout if logged in) */}
-        <Route path="/gantt" element={<GanttRoute />} />
-
         {/* Protected by Google Auth */}
         <Route path="/" element={
           <ProtectedRoute>
@@ -117,6 +90,11 @@ const App = () => (
         <Route path="/calendar" element={
           <ProtectedRoute>
             <Layout><CalendarPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/gantt" element={
+          <ProtectedRoute>
+            <Layout><GanttChartPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/book" element={

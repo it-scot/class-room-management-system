@@ -1,6 +1,7 @@
 // api/index.js
 // Express / Vercel serverless backend for SCOT Facility Management System.
 require('dotenv').config();
+const crypto     = require('crypto');
 const express    = require('express');
 const cors       = require('cors');
 const nodemailer = require('nodemailer');
@@ -13,6 +14,28 @@ const APP_NAME = 'SCOT Facility Management System';
 const APP_TAG  = 'SCOT FMS';
 const OPERATIONS_ALERT_EMAIL = 'dayananda@scot.lk';
 const ALLOWED_DOMAIN = 'scot.lk';
+
+const GANTT_BUILDINGS = {
+  'Building 1 (Main)': [
+    'Board Room',
+    'E&E Lab',
+    'Admission Office',
+    'Classroom 101',
+    'Classroom 102',
+    'Classroom 103',
+    'Computer Lab',
+    'Admin Room',
+    'ME Lab',
+  ],
+  'Building 2 (New)': [
+    'Library',
+    'Classroom 101',
+    'Classroom 102',
+    'Classroom 201',
+    'Classroom 202',
+    'Classroom 301',
+  ],
+};
 
 if (process.env.NODE_ENV !== 'test') {
   try {
@@ -324,64 +347,154 @@ const equipmentBookingHtml = (b, heading = 'Equipment Booking Confirmed') => {
 // Health check
 app.get('/health', (_, res) => res.json({ status: 'ok', app: APP_NAME }));
 
-// ─── Public Gantt Schedule Endpoint (for Security & Supporting Staff mobile view) ──
-app.get('/api/public/bookings', async (req, res) => {
+// ─── Strict Read-Only Gantt API Key Middleware & Schedule Loaders ────────────
+let _cachedFirestoreKey = { value: null, active: false, fetchedAt: 0 };
+const API_KEY_CACHE_TTL_MS = 15000;
+
+const safeCompare = (a, b) => {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+};
+
+const getActiveGanttApiKeys = async (forceRefresh = false) => {
+  const keys = [];
+  if (process.env.GANTT_PUBLIC_API_KEY) {
+    keys.push(process.env.GANTT_PUBLIC_API_KEY.trim());
+  }
+
   try {
-    // Optional API key verification if configured on server
-    const configuredKey = process.env.GANTT_PUBLIC_API_KEY;
-    const suppliedKey = req.query.key || req.headers['x-api-key'];
-    if (configuredKey && suppliedKey && suppliedKey !== configuredKey) {
-      return res.status(401).json({ ok: false, error: 'Invalid API key' });
-    }
-
-    const filterDate = req.query.date || null;
-    let bookings = [];
-
-    // 1. Try Firestore via firebase-admin first
-    try {
-      if (admin.apps.length > 0) {
+    if (admin.apps.length > 0) {
+      const now = Date.now();
+      if (forceRefresh || now - _cachedFirestoreKey.fetchedAt > API_KEY_CACHE_TTL_MS) {
         const db = getFirestore();
-        let queryRef = db.collection('bookings');
-        if (filterDate) {
-          queryRef = queryRef.where('date', '==', filterDate);
-        }
-        const snap = await queryRef.get();
-        bookings = snap.docs.map(doc => {
-          const d = doc.data();
-          return {
-            id: doc.id,
-            building: d.building || '',
-            room: d.room || '',
-            date: d.date || '',
-            startTime: d.startTime || '',
-            endTime: d.endTime || '',
-            seats: d.seats || '',
-            department: d.department || '',
-            bookedFor: d.bookedFor || d.inPersonLecturers || d.userEmail || '',
-            inPersonLecturers: d.inPersonLecturers || d.bookedFor || '',
-            userName: d.userName || '',
-            userEmail: d.userEmail || '',
-            reason: d.reason || '',
-            specialRequirement: d.specialRequirement || '',
-            status: d.status || 'Approved',
+        const snap = await db.collection('api_keys').doc('gantt_mobile').get();
+        if (snap.exists) {
+          const data = snap.data() || {};
+          _cachedFirestoreKey = {
+            value: typeof data.key === 'string' ? data.key.trim() : null,
+            active: data.active !== false,
+            fetchedAt: now,
           };
-        });
+        } else {
+          _cachedFirestoreKey = { value: null, active: false, fetchedAt: now };
+        }
       }
-    } catch (fsErr) {
-      console.warn('[PUBLIC GANTT] Firestore fallback to Sheets:', fsErr.message);
+      if (_cachedFirestoreKey.active && _cachedFirestoreKey.value) {
+        keys.push(_cachedFirestoreKey.value);
+      }
     }
+  } catch (err) {
+    console.warn('[API KEY] Failed to read Firestore api_keys/gantt_mobile:', err.message);
+  }
 
-    // 2. Fallback to Google Sheets if Firestore admin is unavailable or returned nothing
-    if (bookings.length === 0) {
-      try {
-        const sheets = getSheets();
-        const spreadsheetId = getSpreadsheetId();
-        if (sheets && spreadsheetId) {
-          const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:T` });
-          const rows = (resp.data.values || []).slice(1);
-          bookings = rows
-            .map(row => ({
-              id: row[0] || '',
+  return [...new Set(keys.filter(Boolean))];
+};
+
+const requireGanttApiKey = async (req, res, next) => {
+  const suppliedKey = String(req.headers['x-api-key'] || req.query.apiKey || req.query.key || '').trim();
+  if (!suppliedKey) {
+    return res.status(401).json({ ok: false, error: 'API key required. Pass it via the x-api-key header.' });
+  }
+
+  let activeKeys = await getActiveGanttApiKeys(false);
+  let matched = activeKeys.some((k) => safeCompare(k, suppliedKey));
+
+  // If mismatch, refresh cache once in case admin just rotated the key
+  if (!matched && admin.apps.length > 0) {
+    activeKeys = await getActiveGanttApiKeys(true);
+    matched = activeKeys.some((k) => safeCompare(k, suppliedKey));
+  }
+
+  if (activeKeys.length === 0) {
+    return res.status(503).json({
+      ok: false,
+      error: 'No active Gantt API key is configured on the server. Ask an admin to generate one in the Admin Panel.',
+    });
+  }
+
+  if (!matched) {
+    return res.status(401).json({ ok: false, error: 'Invalid or disabled API key.' });
+  }
+
+  return next();
+};
+
+const sanitizeRoomBooking = (id, d) => ({
+  id,
+  building: d.building || '',
+  room: d.room || '',
+  date: d.date || '',
+  startTime: d.startTime || '',
+  endTime: d.endTime || '',
+  seats: d.seats || '',
+  department: d.department || '',
+  bookedFor: d.bookedFor || d.inPersonLecturers || d.userEmail || '',
+  reason: d.reason || '',
+  specialRequirement: d.specialRequirement || '',
+  status: d.status || 'Approved',
+});
+
+const sanitizeEquipmentBooking = (id, d) => {
+  const items = Array.isArray(d.items) ? d.items : [];
+  const itemsSummary =
+    d.itemsSummary ||
+    items.map((i) => `${i.name} (x${i.quantity || 1})`).join(', ');
+  const totalQuantity =
+    d.totalQuantity ||
+    items.reduce((sum, i) => sum + Number(i.quantity || 1), 0) ||
+    1;
+
+  return {
+    id,
+    items,
+    itemsSummary,
+    totalQuantity,
+    location: d.location || '',
+    date: d.date || '',
+    startTime: d.startTime || '',
+    endTime: d.endTime || '',
+    department: d.department || '',
+    bookedFor: d.bookedFor || (Array.isArray(d.bookForEmails) ? d.bookForEmails.join(', ') : '') || d.userEmail || '',
+    reason: d.reason || '',
+    specialRequirement: d.specialRequirement || '',
+    status: d.status || 'Approved',
+  };
+};
+
+const fetchActiveRoomBookings = async (filterDate = null) => {
+  let bookings = [];
+
+  // 1. Primary: Firestore via firebase-admin
+  try {
+    if (admin.apps.length > 0) {
+      const db = getFirestore();
+      let queryRef = db.collection('bookings');
+      if (filterDate) {
+        queryRef = queryRef.where('date', '==', filterDate);
+      }
+      const snap = await queryRef.get();
+      bookings = snap.docs
+        .map((doc) => sanitizeRoomBooking(doc.id, doc.data() || {}))
+        .filter((b) => b.status !== 'Rejected' && b.status !== 'Cancelled');
+    }
+  } catch (fsErr) {
+    console.warn('[GANTT API] Firestore rooms fallback to Sheets:', fsErr.message);
+  }
+
+  // 2. Fallback: Google Sheets
+  if (bookings.length === 0) {
+    try {
+      const sheets = getSheets();
+      const spreadsheetId = getSpreadsheetId();
+      if (sheets && spreadsheetId) {
+        const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:T` });
+        const rows = (resp.data.values || []).slice(1);
+        bookings = rows
+          .map((row) =>
+            sanitizeRoomBooking(row[0] || '', {
               userName: row[1] || '',
               userEmail: row[2] || '',
               building: row[4] || '',
@@ -395,20 +508,246 @@ app.get('/api/public/bookings', async (req, res) => {
               department: row[14] || '',
               specialRequirement: row[15] || '',
               bookedFor: row[19] || row[2] || '',
-              inPersonLecturers: row[19] || '',
-            }))
-            .filter(b => b.id && (!filterDate || b.date === filterDate));
-        }
-      } catch (sheetErr) {
-        console.error('[PUBLIC GANTT] Sheets fallback error:', sheetErr.message);
+            })
+          )
+          .filter(
+            (b) =>
+              b.id &&
+              b.status !== 'Rejected' &&
+              b.status !== 'Cancelled' &&
+              (!filterDate || b.date === filterDate)
+          );
       }
+    } catch (sheetErr) {
+      console.error('[GANTT API] Sheets rooms fallback error:', sheetErr.message);
     }
-
-    res.json({ ok: true, bookings });
-  } catch (error) {
-    console.error('[PUBLIC GANTT] Unexpected error:', error);
-    res.status(500).json({ ok: false, error: 'Failed to load public schedule' });
   }
+
+  return bookings.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+};
+
+const fetchActiveEquipmentBookings = async (filterDate = null) => {
+  let equipmentBookings = [];
+
+  // 1. Primary: Firestore via firebase-admin
+  try {
+    if (admin.apps.length > 0) {
+      const db = getFirestore();
+      let queryRef = db.collection('equipment_bookings');
+      if (filterDate) {
+        queryRef = queryRef.where('date', '==', filterDate);
+      }
+      const snap = await queryRef.get();
+      equipmentBookings = snap.docs
+        .map((doc) => sanitizeEquipmentBooking(doc.id, doc.data() || {}))
+        .filter((b) => b.status !== 'Rejected' && b.status !== 'Cancelled');
+    }
+  } catch (fsErr) {
+    console.warn('[GANTT API] Firestore equipment fallback to Sheets:', fsErr.message);
+  }
+
+  // 2. Fallback: Google Sheets EquipmentBookings tab
+  if (equipmentBookings.length === 0) {
+    try {
+      const sheets = getSheets();
+      const spreadsheetId = getSpreadsheetId();
+      if (sheets && spreadsheetId) {
+        const resp = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `${EQUIPMENT_SHEET_NAME}!A:O`,
+        });
+        const rows = (resp.data.values || []).slice(1);
+        equipmentBookings = rows
+          .map((row) =>
+            sanitizeEquipmentBooking(row[0] || '', {
+              userEmail: row[2] || '',
+              itemsSummary: row[4] || '',
+              location: row[5] || '',
+              date: row[6] || '',
+              startTime: row[7] || '',
+              endTime: row[8] || '',
+              department: row[9] || '',
+              reason: row[10] || '',
+              specialRequirement: row[11] || '',
+              bookedFor: row[12] || row[2] || '',
+              status: row[13] || 'Approved',
+            })
+          )
+          .filter(
+            (b) =>
+              b.id &&
+              b.status !== 'Rejected' &&
+              b.status !== 'Cancelled' &&
+              (!filterDate || b.date === filterDate)
+          );
+      }
+    } catch (sheetErr) {
+      console.warn('[GANTT API] Sheets equipment fallback:', sheetErr.message);
+    }
+  }
+
+  return equipmentBookings.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+};
+
+// Verify API key for mobile app setup
+app.get('/api/gantt/verify', requireGanttApiKey, (_, res) => {
+  res.json({
+    ok: true,
+    app: APP_NAME,
+    scope: 'gantt:read',
+    buildings: GANTT_BUILDINGS,
+  });
+});
+
+// Dedicated Read-Only Gantt Schedule Endpoint (Rooms + Equipment + Building metadata)
+const handleGanttScheduleRequest = async (req, res) => {
+  try {
+    const filterDate = req.query.date || null;
+    const [bookings, equipmentBookings] = await Promise.all([
+      fetchActiveRoomBookings(filterDate),
+      fetchActiveEquipmentBookings(filterDate),
+    ]);
+
+    res.json({
+      ok: true,
+      updatedAt: new Date().toISOString(),
+      buildings: GANTT_BUILDINGS,
+      bookings,
+      equipmentBookings,
+    });
+  } catch (error) {
+    console.error('[GANTT SCHEDULE] Unexpected error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load Gantt schedule' });
+  }
+};
+
+app.get('/api/gantt/schedule', requireGanttApiKey, handleGanttScheduleRequest);
+// Backward-compatible alias now strictly protected by API key
+app.get('/api/public/bookings', requireGanttApiKey, handleGanttScheduleRequest);
+
+// Dedicated Read-Only Equipment List Endpoint
+app.get('/api/gantt/equipment', requireGanttApiKey, async (req, res) => {
+  try {
+    const filterDate = req.query.date || null;
+    const equipmentBookings = await fetchActiveEquipmentBookings(filterDate);
+    res.json({
+      ok: true,
+      updatedAt: new Date().toISOString(),
+      equipmentBookings,
+    });
+  } catch (error) {
+    console.error('[GANTT EQUIPMENT] Unexpected error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load equipment schedule' });
+  }
+});
+
+// Real-Time Server-Sent Events (SSE) Stream for Mobile App Live Sync & Instant Notifications
+app.get('/api/gantt/stream', requireGanttApiKey, async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (res.flushHeaders) res.flushHeaders();
+
+  const sendEvent = (event, data) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  let unsubRooms = null;
+  let unsubEq = null;
+  let roomsInit = false;
+  let eqInit = false;
+
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 20000);
+
+  if (admin.apps.length > 0) {
+    try {
+      const db = getFirestore();
+      unsubRooms = db.collection('bookings').onSnapshot(
+        (snap) => {
+          const bookings = snap.docs
+            .map((doc) => sanitizeRoomBooking(doc.id, doc.data() || {}))
+            .filter((b) => b.status !== 'Rejected' && b.status !== 'Cancelled')
+            .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+
+          const added = roomsInit
+            ? snap
+                .docChanges()
+                .filter((c) => c.type === 'added')
+                .map((c) => sanitizeRoomBooking(c.doc.id, c.doc.data() || {}))
+                .filter((b) => b.status !== 'Rejected' && b.status !== 'Cancelled')
+            : [];
+
+          roomsInit = true;
+          sendEvent('rooms_update', {
+            updatedAt: new Date().toISOString(),
+            buildings: GANTT_BUILDINGS,
+            bookings,
+            added,
+          });
+        },
+        (err) => {
+          console.error('[SSE ROOMS]', err.message);
+        }
+      );
+
+      unsubEq = db.collection('equipment_bookings').onSnapshot(
+        (snap) => {
+          const equipmentBookings = snap.docs
+            .map((doc) => sanitizeEquipmentBooking(doc.id, doc.data() || {}))
+            .filter((b) => b.status !== 'Rejected' && b.status !== 'Cancelled')
+            .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+
+          const added = eqInit
+            ? snap
+                .docChanges()
+                .filter((c) => c.type === 'added')
+                .map((c) => sanitizeEquipmentBooking(c.doc.id, c.doc.data() || {}))
+                .filter((b) => b.status !== 'Rejected' && b.status !== 'Cancelled')
+            : [];
+
+          eqInit = true;
+          sendEvent('equipment_update', {
+            updatedAt: new Date().toISOString(),
+            equipmentBookings,
+            added,
+          });
+        },
+        (err) => {
+          console.error('[SSE EQUIPMENT]', err.message);
+        }
+      );
+    } catch (err) {
+      console.warn('[SSE INIT]', err.message);
+    }
+  } else {
+    // Fallback snapshot when Firebase Admin is unavailable
+    const [bookings, equipmentBookings] = await Promise.all([
+      fetchActiveRoomBookings(),
+      fetchActiveEquipmentBookings(),
+    ]);
+    sendEvent('rooms_update', {
+      updatedAt: new Date().toISOString(),
+      buildings: GANTT_BUILDINGS,
+      bookings,
+      added: [],
+    });
+    sendEvent('equipment_update', {
+      updatedAt: new Date().toISOString(),
+      equipmentBookings,
+      added: [],
+    });
+  }
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    if (unsubRooms) unsubRooms();
+    if (unsubEq) unsubEq();
+    res.end();
+  });
 });
 
 // ─── Direct Google Sheet Stats Endpoint ──────────────────────────────────────

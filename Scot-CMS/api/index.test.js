@@ -63,6 +63,7 @@ vi.mock('nodemailer', () => {
 });
 
 process.env.GOOGLE_SHEET_ID = ''; // Disable sheets for unit tests
+process.env.GANTT_PUBLIC_API_KEY = 'scot_gantt_test_secret_key_12345';
 app.setTransporter({ sendMail: sendMailMock });
 
 describe('SCOT Facility Management System — Backend API Tests', () => {
@@ -72,11 +73,41 @@ describe('SCOT Facility Management System — Backend API Tests', () => {
     expect(res.body).toEqual({ status: 'ok', app: 'SCOT Facility Management System' });
   });
 
-  it('GET /api/public/bookings should return public schedule payload without auth', async () => {
-    const res = await request(app).get('/api/public/bookings');
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(Array.isArray(res.body.bookings)).toBe(true);
+  it('GET /api/gantt/schedule should reject requests without a valid API key (401)', async () => {
+    const noKeyRes = await request(app).get('/api/gantt/schedule');
+    expect(noKeyRes.status).toBe(401);
+    expect(noKeyRes.body.ok).toBe(false);
+
+    const badKeyRes = await request(app)
+      .get('/api/gantt/schedule')
+      .set('x-api-key', 'wrong_key');
+    expect(badKeyRes.status).toBe(401);
+    expect(badKeyRes.body.ok).toBe(false);
+  });
+
+  it('GET /api/gantt/verify, /api/gantt/schedule, and /api/gantt/equipment should succeed with valid x-api-key', async () => {
+    const verifyRes = await request(app)
+      .get('/api/gantt/verify')
+      .set('x-api-key', process.env.GANTT_PUBLIC_API_KEY);
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.ok).toBe(true);
+    expect(verifyRes.body.scope).toBe('gantt:read');
+
+    const scheduleRes = await request(app)
+      .get('/api/gantt/schedule')
+      .set('x-api-key', process.env.GANTT_PUBLIC_API_KEY);
+    expect(scheduleRes.status).toBe(200);
+    expect(scheduleRes.body.ok).toBe(true);
+    expect(Array.isArray(scheduleRes.body.bookings)).toBe(true);
+    expect(Array.isArray(scheduleRes.body.equipmentBookings)).toBe(true);
+    expect(scheduleRes.body.buildings).toBeDefined();
+
+    const eqRes = await request(app)
+      .get('/api/gantt/equipment')
+      .set('x-api-key', process.env.GANTT_PUBLIC_API_KEY);
+    expect(eqRes.status).toBe(200);
+    expect(eqRes.body.ok).toBe(true);
+    expect(Array.isArray(eqRes.body.equipmentBookings)).toBe(true);
   });
 
   describe('POST /api/bookings/new', () => {
