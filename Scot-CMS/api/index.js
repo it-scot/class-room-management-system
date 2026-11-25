@@ -18,6 +18,10 @@ const EQUIPMENT_ALERT_EMAILS = [
   'ishan.madhuranga@scot.lk',
   'disitha@scot.lk',
 ];
+const EQUIPMENT_ISSUED_NOTIFY_EMAILS = [
+  'ishan.madhuranga@scot.lk',
+  'disitha@scot.lk',
+];
 const ALLOWED_DOMAIN = 'scot.lk';
 
 const GANTT_BUILDINGS = {
@@ -473,6 +477,8 @@ const sanitizeEquipmentBooking = (id, d) => {
     reason: d.reason || '',
     specialRequirement: d.specialRequirement || '',
     status: d.status || 'Approved',
+    issued: Boolean(d.issued),
+    issuedAt: d.issuedAt || null,
   };
 };
 
@@ -652,6 +658,76 @@ app.get('/api/gantt/equipment', requireGanttApiKey, async (req, res) => {
   } catch (error) {
     console.error('[GANTT EQUIPMENT] Unexpected error:', error);
     res.status(500).json({ ok: false, error: 'Failed to load equipment schedule' });
+  }
+});
+
+// Mark Equipment Booking as Issued from Mobile App → Persist in Firestore + Auto-Email ishan.madhuranga@scot.lk & disitha@scot.lk
+app.post('/api/gantt/equipment/issue', requireGanttApiKey, async (req, res) => {
+  try {
+    const booking = req.body || {};
+    if (!booking.id) {
+      return res.status(400).json({ ok: false, error: 'Missing equipment booking id' });
+    }
+
+    const issuedAt = new Date().toISOString();
+    let stored = booking;
+
+    // 1. Persist issued flag in Firestore so all devices stay in sync
+    if (hasFirebaseAdmin()) {
+      try {
+        const db = getFirestore();
+        const ref = db.collection('equipment_bookings').doc(booking.id);
+        const snap = await ref.get();
+        if (snap.exists) {
+          stored = { id: snap.id, ...snap.data(), ...booking };
+        }
+        await ref.set(
+          {
+            issued: true,
+            issuedAt,
+          },
+          { merge: true }
+        );
+      } catch (fsErr) {
+        console.warn('[EQUIPMENT ISSUED] Firestore update skipped:', fsErr.message);
+      }
+    }
+
+    // 2. Send automated email strictly to ishan.madhuranga@scot.lk & disitha@scot.lk
+    const itemsText = Array.isArray(stored.items) && stored.items.length > 0
+      ? stored.items.map((i) => `${i.name} (x${i.quantity || 1})`).join(', ')
+      : (stored.itemsSummary || 'Equipment');
+
+    try {
+      const transporter = getTransporter();
+      await transporter.sendMail({
+        from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+        to:      EQUIPMENT_ISSUED_NOTIFY_EMAILS.join(', '),
+        subject: `[${APP_TAG}] ✅ Equipment Issued: ${itemsText} (${stored.date || ''})`,
+        html:    equipmentBookingHtml(
+          {
+            ...stored,
+            status: 'Approved',
+            adminReason: `Marked as Issued & Handed Over via SCOT Live Schedule Mobile App at ${new Date(issuedAt).toLocaleString('en-LK', { timeZone: 'Asia/Colombo' })}`,
+          },
+          '✅ Equipment Issued & Ready'
+        ),
+      });
+      console.log('[EQUIPMENT ISSUED EMAIL SENT] →', EQUIPMENT_ISSUED_NOTIFY_EMAILS.join(', '));
+    } catch (mailErr) {
+      console.error('[EQUIPMENT ISSUED EMAIL] Error:', mailErr.message);
+    }
+
+    res.json({
+      ok: true,
+      id: booking.id,
+      issued: true,
+      issuedAt,
+      notified: EQUIPMENT_ISSUED_NOTIFY_EMAILS,
+    });
+  } catch (error) {
+    console.error('[EQUIPMENT ISSUED] Unexpected error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to mark equipment as issued' });
   }
 });
 

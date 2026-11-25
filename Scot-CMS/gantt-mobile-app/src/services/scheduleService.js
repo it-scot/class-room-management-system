@@ -39,6 +39,23 @@ export const fetchGanttSchedule = async (baseUrl, apiKey) => {
   return res.json();
 };
 
+export const markEquipmentAsIssued = async (baseUrl, apiKey, booking) => {
+  const base = normalizeUrl(baseUrl);
+  const res = await fetch(`${base}/api/gantt/equipment/issue`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': String(apiKey || '').trim(),
+    },
+    body: JSON.stringify(booking),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || `Failed to mark equipment issued (${res.status})`);
+  }
+  return data;
+};
+
 /**
  * Starts continuous real-time sync with the portal (every 4 seconds, no-cache).
  * Returns { stop, refreshNow }.

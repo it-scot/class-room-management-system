@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,7 +25,7 @@ import {
   DEFAULT_BUILDINGS,
   buildPreviewData,
 } from './src/config/apiConfig';
-import { startScheduleSync } from './src/services/scheduleService';
+import { startScheduleSync, markEquipmentAsIssued } from './src/services/scheduleService';
 import {
   requestAlertPermission,
   sendLocalNotification,
@@ -43,8 +44,27 @@ import {
 const STORAGE_API_KEY = 'scot_rn_api_config';
 const STORAGE_READY_ROOMS = 'scot_rn_ready_rooms';
 const STORAGE_READY_EQ = 'scot_rn_ready_eq';
+const STORAGE_NOTIFIED_REMINDERS = 'scot_rn_notified_eq_reminders';
+const REMINDER_WINDOW_MS = 3 * 60 * 60 * 1000; // 3 hours before required time
 
 const getTodayStr = () => format(new Date(), 'yyyy-MM-dd');
+
+const parseBookingDateTime = (dateStr, timeStr) => {
+  if (!dateStr || !timeStr) return null;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const [hh, mm] = timeStr.split(':').map(Number);
+  if (!y || !m || !d || isNaN(hh) || isNaN(mm)) return null;
+  return new Date(y, m - 1, d, hh, mm, 0, 0);
+};
+
+const formatCountdown = (mins) => {
+  if (mins <= 0) return 'Required now';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `Starts in ${m}m`;
+  if (m === 0) return `Starts in ${h}h`;
+  return `Starts in ${h}h ${m}m`;
+};
 
 export default function App() {
   const [portalUrl, setPortalUrl] = useState(DEFAULT_PORTAL_URL);
@@ -79,9 +99,11 @@ export default function App() {
 
   const [readyRoomsByDate, setReadyRoomsByDate] = useState({});
   const [readyEqIds, setReadyEqIds] = useState([]);
+  const [issuingIds, setIssuingIds] = useState({});
 
   const knownRoomsMapRef = useRef(null);
   const knownEqMapRef = useRef(null);
+  const notifiedRemindersRef = useRef(new Set());
   const alertsEnabledRef = useRef(alertsEnabled);
   const syncControllerRef = useRef(null);
   const toastTimerRef = useRef(null);
@@ -94,10 +116,11 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [savedApi, savedRooms, savedEq] = await Promise.all([
+        const [savedApi, savedRooms, savedEq, savedNotified] = await Promise.all([
           AsyncStorage.getItem(STORAGE_API_KEY),
           AsyncStorage.getItem(STORAGE_READY_ROOMS),
           AsyncStorage.getItem(STORAGE_READY_EQ),
+          AsyncStorage.getItem(STORAGE_NOTIFIED_REMINDERS),
         ]);
         if (savedApi) {
           const parsed = JSON.parse(savedApi);
@@ -111,6 +134,12 @@ export default function App() {
         }
         if (savedRooms) setReadyRoomsByDate(JSON.parse(savedRooms));
         if (savedEq) setReadyEqIds(JSON.parse(savedEq));
+        if (savedNotified) {
+          const parsedN = JSON.parse(savedNotified);
+          if (parsedN?.date === getTodayStr() && Array.isArray(parsedN.ids)) {
+            notifiedRemindersRef.current = new Set(parsedN.ids);
+          }
+        }
       } catch { /* ignore */ } finally {
         setConfigLoaded(true);
       }
@@ -266,12 +295,50 @@ export default function App() {
     });
   };
 
-  const toggleReadyEq = async (id) => {
-    setReadyEqIds((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      AsyncStorage.setItem(STORAGE_READY_EQ, JSON.stringify(next)).catch(() => {});
-      return next;
-    });
+  const handleMarkEquipmentIssued = async (booking) => {
+    if (!booking?.id) return;
+    if (booking.issued || readyEqIds.includes(booking.id) || issuingIds[booking.id]) return;
+
+    setIssuingIds((prev) => ({ ...prev, [booking.id]: true }));
+    try {
+      if (apiKey && portalUrl) {
+        await markEquipmentAsIssued(portalUrl, apiKey, booking);
+      }
+
+      // Update local state & persistence immediately
+      setEquipmentBookings((prev) =>
+        prev.map((item) =>
+          item.id === booking.id
+            ? { ...item, issued: true, issuedAt: new Date().toISOString() }
+            : item
+        )
+      );
+      setReadyEqIds((prev) => {
+        const next = prev.includes(booking.id) ? prev : [...prev, booking.id];
+        AsyncStorage.setItem(STORAGE_READY_EQ, JSON.stringify(next)).catch(() => {});
+        return next;
+      });
+
+      const itemsLabel = booking.itemsSummary || 'Equipment';
+      const toastEntry = {
+        id: `issued-${booking.id}-${Date.now()}`,
+        title: `Issued: ${itemsLabel}`,
+        body: 'Confirmation email sent to ishan.madhuranga@scot.lk & disitha@scot.lk',
+        time: format(new Date(), 'hh:mm:ss a'),
+      };
+      setLiveToast(toastEntry);
+      setAlertFeed((prev) => [toastEntry, ...prev].slice(0, 30));
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setLiveToast(null), 7000);
+    } catch (err) {
+      setSyncError(err.message || 'Could not send issued email. Please retry.');
+    } finally {
+      setIssuingIds((prev) => {
+        const next = { ...prev };
+        delete next[booking.id];
+        return next;
+      });
+    }
   };
 
   const handleToggleAlerts = async () => {
@@ -296,6 +363,53 @@ export default function App() {
 
   const todayStr = getTodayStr();
   const isToday = selectedDate === todayStr;
+
+  // 3-Hour Pre-Session Equipment Reminder Banners (all un-issued equipment needed today within 3h of startTime through endTime)
+  const dueEquipmentReminders = useMemo(() => {
+    const nowMs = now.getTime();
+    return (equipmentBookings || [])
+      .filter((b) => {
+        if (!b || b.date !== todayStr) return false;
+        if (b.issued || readyEqIds.includes(b.id)) return false;
+        const startDt = parseBookingDateTime(b.date, b.startTime);
+        const endDt = parseBookingDateTime(b.date, b.endTime);
+        if (!startDt || !endDt) return false;
+        return nowMs >= startDt.getTime() - REMINDER_WINDOW_MS && nowMs <= endDt.getTime();
+      })
+      .map((b) => {
+        const startDt = parseBookingDateTime(b.date, b.startTime);
+        const minsUntilStart = Math.round((startDt.getTime() - nowMs) / 60000);
+        return { ...b, minsUntilStart };
+      })
+      .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+  }, [equipmentBookings, todayStr, now, readyEqIds]);
+
+  // Fire real-time device notification once when each equipment booking enters its 3-hour pre-session window
+  useEffect(() => {
+    if (!configLoaded || dueEquipmentReminders.length === 0) return;
+
+    let addedNew = false;
+    dueEquipmentReminders.forEach((rem) => {
+      if (!notifiedRemindersRef.current.has(rem.id)) {
+        notifiedRemindersRef.current.add(rem.id);
+        addedNew = true;
+        const countdown = formatCountdown(rem.minsUntilStart);
+        recordAlert(
+          `Equipment Reminder: ${rem.itemsSummary || 'Equipment'}`,
+          `${countdown} (${rem.startTime}–${rem.endTime}) at ${rem.location || 'Campus'}. Tick to mark issued.`,
+          rem.date,
+          'equipment'
+        );
+      }
+    });
+
+    if (addedNew) {
+      AsyncStorage.setItem(
+        STORAGE_NOTIFIED_REMINDERS,
+        JSON.stringify({ date: todayStr, ids: Array.from(notifiedRemindersRef.current) })
+      ).catch(() => {});
+    }
+  }, [configLoaded, dueEquipmentReminders, todayStr]);
 
   const stats = useMemo(() => {
     const dayRooms = bookings.filter((b) => b.date === selectedDate);
@@ -450,6 +564,62 @@ export default function App() {
           </View>
         )}
 
+        {/* Stacked 3-Hour Pre-Session Equipment Reminder Banners (each with Tick/Radio button to mark Issued & email) */}
+        {dueEquipmentReminders.length > 0 && (
+          <View style={styles.remindersStack}>
+            <View style={styles.remindersHeader}>
+              <Ionicons name="alarm-outline" size={14} color="#fcd34d" />
+              <Text style={styles.remindersHeaderText}>
+                EQUIPMENT REMINDERS DUE ({dueEquipmentReminders.length})
+              </Text>
+            </View>
+            {dueEquipmentReminders.map((rem) => {
+              const isBusy = Boolean(issuingIds[rem.id]);
+              const isUrgent = rem.minsUntilStart <= 30;
+              return (
+                <View
+                  key={rem.id}
+                  style={[styles.reminderBanner, isUrgent && styles.reminderBannerUrgent]}
+                >
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <View style={styles.reminderTopRow}>
+                      <View style={[styles.reminderBadge, isUrgent && styles.reminderBadgeUrgent]}>
+                        <Text style={[styles.reminderBadgeText, isUrgent && { color: '#fecaca' }]}>
+                          {formatCountdown(rem.minsUntilStart)}
+                        </Text>
+                      </View>
+                      <Text style={styles.reminderTime}>
+                        {rem.startTime} – {rem.endTime}
+                      </Text>
+                    </View>
+                    <Text style={styles.reminderItems}>{rem.itemsSummary || 'Equipment'}</Text>
+                    <Text style={styles.reminderMeta}>
+                      {rem.location || 'SCOT Campus'}
+                      {rem.department ? ` · ${rem.department}` : ''}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    disabled={isBusy}
+                    activeOpacity={0.8}
+                    onPress={() => handleMarkEquipmentIssued(rem)}
+                    style={styles.reminderTickBtn}
+                  >
+                    {isBusy ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons name="radio-button-off" size={18} color="#fde68a" />
+                    )}
+                    <Text style={styles.reminderTickText}>
+                      {isBusy ? 'Sending…' : 'Issued'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {/* Sync Error Banner */}
         {!!syncError && (
           <View style={styles.errBanner}>
@@ -539,7 +709,8 @@ export default function App() {
             selectedDate={selectedDate}
             todayStr={todayStr}
             readyEqIds={readyEqIds}
-            onToggleReadyEq={toggleReadyEq}
+            issuingIds={issuingIds}
+            onMarkIssued={handleMarkEquipmentIssued}
           />
         )}
       </ScrollView>
@@ -729,6 +900,47 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryChipText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  remindersStack: { gap: 8 },
+  remindersHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2 },
+  remindersHeaderText: { color: '#fcd34d', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.7 },
+  reminderBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(245,158,11,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.4)',
+    borderRadius: 16,
+    padding: 12,
+  },
+  reminderBannerUrgent: {
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    borderColor: 'rgba(248,113,113,0.48)',
+  },
+  reminderTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  reminderBadge: {
+    backgroundColor: 'rgba(245,158,11,0.25)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  reminderBadgeUrgent: { backgroundColor: 'rgba(239,68,68,0.32)' },
+  reminderBadgeText: { color: '#fde68a', fontSize: 10, fontWeight: '800' },
+  reminderTime: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  reminderItems: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  reminderMeta: { color: '#cbd5e1', fontSize: 11 },
+  reminderTickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(11,17,32,0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.45)',
+    borderRadius: 12,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  reminderTickText: { color: '#fef3c7', fontSize: 11, fontWeight: '800' },
   dateBar: {
     flexDirection: 'row',
     alignItems: 'center',

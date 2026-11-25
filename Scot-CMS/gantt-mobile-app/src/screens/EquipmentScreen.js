@@ -2,7 +2,7 @@
 // React Native Equipment Reservations & Setup Checklist with one-tap PDF & Excel downloads.
 
 import React, { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../theme/colors';
 import {
@@ -15,7 +15,8 @@ const EquipmentScreen = ({
   selectedDate,
   todayStr,
   readyEqIds,
-  onToggleReadyEq,
+  issuingIds = {},
+  onMarkIssued,
 }) => {
   const [scope, setScope] = useState('upcoming'); // 'day' | 'upcoming' | 'all'
 
@@ -113,7 +114,8 @@ const EquipmentScreen = ({
       ) : (
         <View style={styles.list}>
           {filtered.map((b) => {
-            const isIssued = readyEqIds.includes(b.id);
+            const isIssued = Boolean(b.issued) || readyEqIds.includes(b.id);
+            const isBusy = Boolean(issuingIds[b.id]);
             return (
               <View key={b.id} style={[styles.card, isIssued && styles.cardIssued]}>
                 <View style={styles.cardHeader}>
@@ -132,16 +134,22 @@ const EquipmentScreen = ({
                   </View>
 
                   <TouchableOpacity
-                    onPress={() => onToggleReadyEq(b.id)}
+                    disabled={isIssued || isBusy}
+                    activeOpacity={0.8}
+                    onPress={() => onMarkIssued?.(b)}
                     style={[styles.issueBtn, isIssued && styles.issueBtnActive]}
                   >
-                    <Ionicons
-                      name={isIssued ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={14}
-                      color={isIssued ? '#fff' : COLORS.textSecondary}
-                    />
+                    {isBusy ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons
+                        name={isIssued ? 'checkmark-circle' : 'radio-button-off'}
+                        size={16}
+                        color={isIssued ? '#fff' : COLORS.amber}
+                      />
+                    )}
                     <Text style={[styles.issueBtnText, isIssued && { color: '#fff' }]}>
-                      {isIssued ? 'Issued' : 'Ready'}
+                      {isBusy ? 'Sending…' : isIssued ? 'Issued ✓' : 'Mark Issued'}
                     </Text>
                   </TouchableOpacity>
                 </View>

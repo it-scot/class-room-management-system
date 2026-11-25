@@ -235,5 +235,36 @@ describe('SCOT Facility Management System — Backend API Tests', () => {
       expect(sendMailMock.mock.calls[1][0].to).toContain('ishan.madhuranga@scot.lk');
       expect(sendMailMock.mock.calls[1][0].to).toContain('disitha@scot.lk');
     });
+
+    it('POST /api/gantt/equipment/issue requires API key and emails ishan.madhuranga@scot.lk & disitha@scot.lk', async () => {
+      const unauthRes = await request(app)
+        .post('/api/gantt/equipment/issue')
+        .send({ id: 'eq_issue_1' });
+      expect(unauthRes.status).toBe(401);
+
+      sendMailMock.mockClear();
+      const res = await request(app)
+        .post('/api/gantt/equipment/issue')
+        .set('x-api-key', process.env.GANTT_PUBLIC_API_KEY)
+        .send({
+          id: 'eq_issue_1',
+          items: [{ id: 'generator', name: 'Generator', quantity: 1 }],
+          itemsSummary: 'Generator (x1)',
+          location: 'Building 1 - Board Room',
+          date: '2026-12-01',
+          startTime: '09:00',
+          endTime: '12:00',
+          department: 'Admin Department',
+          bookedFor: 'kasun@scot.lk',
+          reason: 'Exam Conduction',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.issued).toBe(true);
+      expect(sendMailMock).toHaveBeenCalledTimes(1);
+      expect(sendMailMock.mock.calls[0][0].to).toContain('ishan.madhuranga@scot.lk');
+      expect(sendMailMock.mock.calls[0][0].to).toContain('disitha@scot.lk');
+    });
   });
 });
