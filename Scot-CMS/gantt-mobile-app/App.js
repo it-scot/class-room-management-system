@@ -72,13 +72,19 @@ export default function App() {
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [alertFeed, setAlertFeed] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [liveToast, setLiveToast] = useState(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [syncError, setSyncError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const [readyRoomsByDate, setReadyRoomsByDate] = useState({});
   const [readyEqIds, setReadyEqIds] = useState([]);
 
-  const knownRoomIdsRef = useRef(null);
-  const knownEqIdsRef = useRef(null);
+  const knownRoomsMapRef = useRef(null);
+  const knownEqMapRef = useRef(null);
   const alertsEnabledRef = useRef(alertsEnabled);
+  const syncControllerRef = useRef(null);
+  const toastTimerRef = useRef(null);
 
   useEffect(() => {
     alertsEnabledRef.current = alertsEnabled;
@@ -95,7 +101,10 @@ export default function App() {
         ]);
         if (savedApi) {
           const parsed = JSON.parse(savedApi);
-          if (parsed.apiKey && parsed.portalUrl) {
+          // Only override .env if the user explicitly saved a non-localhost live URL + key
+          const isStaleLocalhost =
+            parsed.portalUrl?.includes('localhost') && !DEFAULT_PORTAL_URL.includes('localhost');
+          if (parsed.apiKey && parsed.portalUrl && !isStaleLocalhost) {
             setPortalUrl(parsed.portalUrl);
             setApiKey(parsed.apiKey);
           }
@@ -108,21 +117,27 @@ export default function App() {
     })();
   }, []);
 
-  // Clock refresh every minute for live NOW line & LIVE NOW badges
+  // Clock refresh every 15s so live NOW line & "Synced Xs ago" stay fresh
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60000);
+    const id = setInterval(() => setNow(new Date()), 15000);
     return () => clearInterval(id);
   }, []);
 
-  const recordAlert = (title, body) => {
+  const recordAlert = (title, body, targetDate = null, targetTab = null) => {
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       title,
       body,
-      time: format(new Date(), 'hh:mm a'),
+      targetDate,
+      targetTab,
+      time: format(new Date(), 'hh:mm:ss a'),
     };
-    setAlertFeed((prev) => [entry, ...prev].slice(0, 25));
+    setAlertFeed((prev) => [entry, ...prev].slice(0, 30));
     setUnreadCount((c) => c + 1);
+    setLiveToast(entry);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setLiveToast(null), 8000);
+
     if (alertsEnabledRef.current) {
       sendLocalNotification(title, body);
     }
@@ -140,65 +155,94 @@ export default function App() {
       return;
     }
 
-    knownRoomIdsRef.current = null;
-    knownEqIdsRef.current = null;
+    knownRoomsMapRef.current = null;
+    knownEqMapRef.current = null;
     setSyncStatus('connecting');
+    setSyncError('');
 
     const handleRooms = (nextRooms, nextBuildings) => {
       if (nextBuildings) setBuildings(nextBuildings);
       setBookings(nextRooms);
 
-      const prev = knownRoomIdsRef.current;
-      const nextSet = new Set(nextRooms.map((b) => b.id));
-      if (prev !== null) {
+      const prevMap = knownRoomsMapRef.current;
+      const nextMap = new Map(nextRooms.map((b) => [b.id, b]));
+      if (prevMap !== null) {
+        // Newly added bookings
         nextRooms
-          .filter((b) => !prev.has(b.id))
+          .filter((b) => !prevMap.has(b.id))
           .forEach((b) => {
             const bShort = (b.building || '').replace(/ \(.+\)/, '').trim();
             recordAlert(
               `New Room Booking: ${b.room}`,
-              `${bShort} · ${b.date} (${b.startTime}–${b.endTime}) · ${b.department || b.reason}`
+              `${bShort} · ${b.date} (${b.startTime}–${b.endTime}) · ${b.department || b.reason}`,
+              b.date,
+              'gantt'
             );
           });
+
+        // Cancelled / removed bookings
+        for (const [oldId, oldB] of prevMap.entries()) {
+          if (!nextMap.has(oldId)) {
+            recordAlert(
+              `Booking Cancelled: ${oldB.room}`,
+              `${oldB.date} (${oldB.startTime}–${oldB.endTime}) was removed or cancelled.`,
+              oldB.date,
+              'gantt'
+            );
+          }
+        }
       }
-      knownRoomIdsRef.current = nextSet;
+      knownRoomsMapRef.current = nextMap;
     };
 
     const handleEq = (nextEq) => {
       setEquipmentBookings(nextEq);
 
-      const prev = knownEqIdsRef.current;
-      const nextSet = new Set(nextEq.map((e) => e.id));
-      if (prev !== null) {
+      const prevMap = knownEqMapRef.current;
+      const nextMap = new Map(nextEq.map((e) => [e.id, e]));
+      if (prevMap !== null) {
         nextEq
-          .filter((e) => !prev.has(e.id))
+          .filter((e) => !prevMap.has(e.id))
           .forEach((e) => {
             recordAlert(
               'New Equipment Request',
-              `${e.itemsSummary || 'Equipment'} · ${e.date} (${e.startTime}–${e.endTime}) · ${e.location || 'Campus'}`
+              `${e.itemsSummary || 'Equipment'} · ${e.date} (${e.startTime}–${e.endTime}) · ${e.location || 'Campus'}`,
+              e.date,
+              'equipment'
             );
           });
       }
-      knownEqIdsRef.current = nextSet;
+      knownEqMapRef.current = nextMap;
     };
 
-    return startScheduleSync(portalUrl, apiKey, {
+    const controller = startScheduleSync(portalUrl, apiKey, {
       onStatus: (st) => setSyncStatus(st),
       onSnapshot: ({ buildings: blds, bookings: rms, equipmentBookings: eqs }) => {
+        setSyncError('');
+        setLastSyncedAt(new Date());
+        setRefreshing(false);
         handleRooms(rms, blds);
         handleEq(eqs);
       },
-      onRoomsUpdate: ({ bookings: rms, buildings: blds }) => {
-        handleRooms(rms || [], blds);
-      },
-      onEquipmentUpdate: ({ equipmentBookings: eqs }) => {
-        handleEq(eqs || []);
-      },
-      onError: () => {
-        setSyncStatus('reconnecting');
+      onError: (msg) => {
+        setRefreshing(false);
+        setSyncError(msg || 'Connection interrupted. Retrying…');
       },
     });
+    syncControllerRef.current = controller;
+
+    return () => {
+      controller.stop();
+      syncControllerRef.current = null;
+    };
   }, [configLoaded, portalUrl, apiKey]);
+
+  const handleManualRefresh = async () => {
+    if (!syncControllerRef.current) return;
+    setRefreshing(true);
+    await syncControllerRef.current.refreshNow();
+    setRefreshing(false);
+  };
 
   const handleSaveApiConfig = async ({ portalUrl: nextUrl, apiKey: nextKey, buildings: nextBlds }) => {
     setPortalUrl(nextUrl);
@@ -280,14 +324,16 @@ export default function App() {
     setSelectedDate(format(addDays(parseISO(selectedDate), delta), 'yyyy-MM-dd'));
   };
 
+  const syncedAgoText = lastSyncedAt
+    ? `Live · ${format(lastSyncedAt, 'hh:mm:ss a')}`
+    : 'Connecting to live portal…';
+
   const statusMeta =
     syncStatus === 'live'
-      ? { label: 'Live Real-Time', color: COLORS.emerald, icon: 'radio' }
-      : syncStatus === 'polling'
-      ? { label: 'Live Auto-Sync', color: COLORS.cyan, icon: 'sync' }
+      ? { label: syncedAgoText, color: COLORS.emerald, icon: 'radio' }
       : syncStatus === 'preview'
-      ? { label: 'Preview · Tap gear for API key', color: COLORS.amber, icon: 'eye-outline' }
-      : { label: 'Reconnecting…', color: COLORS.amber, icon: 'cloud-offline-outline' };
+      ? { label: 'Preview · Tap key for API key', color: COLORS.amber, icon: 'eye-outline' }
+      : { label: 'Syncing with portal…', color: COLORS.amber, icon: 'sync' };
 
   const readableHeaderDate = (() => {
     try {
@@ -319,6 +365,20 @@ export default function App() {
         </View>
 
         <View style={styles.headerActions}>
+          {!!apiKey && (
+            <TouchableOpacity
+              onPress={handleManualRefresh}
+              style={styles.iconBtn}
+              accessibilityLabel="Refresh live schedule"
+            >
+              <Ionicons
+                name="refresh"
+                size={17}
+                color={refreshing ? COLORS.emerald : COLORS.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             onPress={() => setDownloadsOpen(true)}
             style={[styles.iconBtn, styles.downloadBtn]}
@@ -363,6 +423,43 @@ export default function App() {
         contentContainerStyle={styles.bodyContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Live In-App Real-Time Alert Toast */}
+        {liveToast && (
+          <View style={styles.liveToast}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.liveToastTitle}>{liveToast.title}</Text>
+              <Text style={styles.liveToastBody}>{liveToast.body}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {!!liveToast.targetDate && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedDate(liveToast.targetDate);
+                    if (liveToast.targetTab) setActiveTab(liveToast.targetTab);
+                    setLiveToast(null);
+                  }}
+                  style={styles.toastViewBtn}
+                >
+                  <Text style={styles.toastViewText}>View</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={() => setLiveToast(null)}>
+                <Ionicons name="close" size={16} color="#a7f3d0" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Sync Error Banner */}
+        {!!syncError && (
+          <View style={styles.errBanner}>
+            <Text style={styles.errBannerText}>{syncError}</Text>
+            <TouchableOpacity onPress={handleManualRefresh} style={styles.retryChip}>
+              <Text style={styles.retryChipText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Date Switcher */}
         <View style={styles.dateBar}>
           <TouchableOpacity onPress={() => shiftDate(-1)} style={styles.dateArrow}>
@@ -596,6 +693,42 @@ const styles = StyleSheet.create({
   badgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   body: { flex: 1 },
   bodyContent: { padding: 14, gap: 12, paddingBottom: 24 },
+  liveToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(16,185,129,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.45)',
+    borderRadius: 15,
+    padding: 12,
+  },
+  liveToastTitle: { color: '#d1fae5', fontSize: 12, fontWeight: '800' },
+  liveToastBody: { color: '#a7f3d0', fontSize: 11, marginTop: 2 },
+  toastViewBtn: {
+    backgroundColor: COLORS.emerald,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  toastViewText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  errBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    backgroundColor: COLORS.redSoft,
+    borderRadius: 13,
+    padding: 10,
+  },
+  errBannerText: { color: '#fecaca', fontSize: 11, flex: 1 },
+  retryChip: {
+    backgroundColor: COLORS.red,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  retryChipText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   dateBar: {
     flexDirection: 'row',
     alignItems: 'center',

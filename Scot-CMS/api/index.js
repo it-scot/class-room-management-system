@@ -609,6 +609,7 @@ app.get('/api/gantt/verify', requireGanttApiKey, (_, res) => {
 // Dedicated Read-Only Gantt Schedule Endpoint (Rooms + Equipment + Building metadata)
 const handleGanttScheduleRequest = async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const filterDate = req.query.date || null;
     const [bookings, equipmentBookings] = await Promise.all([
       fetchActiveRoomBookings(filterDate),
@@ -635,6 +636,7 @@ app.get('/api/public/bookings', requireGanttApiKey, handleGanttScheduleRequest);
 // Dedicated Read-Only Equipment List Endpoint
 app.get('/api/gantt/equipment', requireGanttApiKey, async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const filterDate = req.query.date || null;
     const equipmentBookings = await fetchActiveEquipmentBookings(filterDate);
     res.json({

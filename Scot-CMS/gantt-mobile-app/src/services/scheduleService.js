@@ -1,6 +1,7 @@
 // src/services/scheduleService.js
-// Real-time read-only schedule sync powered strictly by the SCOT Gantt API key.
-// Uses SSE (EventSource on web) + automatic 10-second live polling for Android/iOS & serverless reliability.
+// Reliable real-time read-only schedule sync powered strictly by the SCOT Gantt API key.
+// Uses cache-busted 4-second live polling (works reliably with Vercel serverless, Android, iOS & Web)
+// plus immediate refresh when returning to the app.
 
 import { AppState, Platform } from 'react-native';
 import { DEFAULT_BUILDINGS } from '../config/apiConfig';
@@ -9,8 +10,9 @@ export const normalizeUrl = (url) => String(url || '').trim().replace(/\/+$/, ''
 
 export const verifyGanttKey = async (baseUrl, apiKey) => {
   const base = normalizeUrl(baseUrl);
-  const res = await fetch(`${base}/api/gantt/verify`, {
+  const res = await fetch(`${base}/api/gantt/verify?_t=${Date.now()}`, {
     headers: { 'x-api-key': apiKey.trim() },
+    cache: 'no-store',
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) {
@@ -21,8 +23,9 @@ export const verifyGanttKey = async (baseUrl, apiKey) => {
 
 export const fetchGanttSchedule = async (baseUrl, apiKey) => {
   const base = normalizeUrl(baseUrl);
-  const res = await fetch(`${base}/api/gantt/schedule`, {
+  const res = await fetch(`${base}/api/gantt/schedule?_t=${Date.now()}`, {
     headers: { 'x-api-key': apiKey.trim() },
+    cache: 'no-store',
   });
   if (res.status === 401 || res.status === 503) {
     const data = await res.json().catch(() => ({}));
@@ -36,104 +39,67 @@ export const fetchGanttSchedule = async (baseUrl, apiKey) => {
   return res.json();
 };
 
+/**
+ * Starts continuous real-time sync with the portal (every 4 seconds, no-cache).
+ * Returns { stop, refreshNow }.
+ */
 export const startScheduleSync = (baseUrl, apiKey, callbacks) => {
   const base = normalizeUrl(baseUrl);
   const key = String(apiKey || '').trim();
 
   let active = true;
+  let inFlight = false;
   let pollTimer = null;
-  let eventSource = null;
 
-  const pollOnce = async () => {
-    if (!active || !base || !key) return;
+  const syncOnce = async () => {
+    if (!active || !base || !key || inFlight) return;
+    inFlight = true;
     try {
       const data = await fetchGanttSchedule(base, key);
       if (!active) return;
+      callbacks.onStatus?.('live');
       callbacks.onSnapshot?.({
         buildings: data.buildings || DEFAULT_BUILDINGS,
         bookings: data.bookings || [],
         equipmentBookings: data.equipmentBookings || [],
         updatedAt: data.updatedAt || new Date().toISOString(),
       });
-      if (!eventSource) {
-        callbacks.onStatus?.('polling');
-      }
     } catch (err) {
       if (!active) return;
+      callbacks.onStatus?.('reconnecting');
       callbacks.onError?.(err.message || 'Unable to connect to portal server', err.status);
+    } finally {
+      inFlight = false;
     }
   };
 
-  const ensurePolling = () => {
-    if (pollTimer || !active) return;
-    pollTimer = setInterval(pollOnce, 10000);
-  };
+  // Fetch immediately, then sync every 4 seconds for near-instant real-time updates
+  syncOnce();
+  pollTimer = setInterval(syncOnce, 4000);
 
-  const stopPolling = () => {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  };
-
-  const connectSse = () => {
-    if (!active || Platform.OS !== 'web' || typeof EventSource === 'undefined') {
-      ensurePolling();
-      return;
-    }
-
-    try {
-      const url = `${base}/api/gantt/stream?key=${encodeURIComponent(key)}`;
-      eventSource = new EventSource(url);
-
-      eventSource.onopen = () => {
-        if (!active) return;
-        stopPolling();
-        callbacks.onStatus?.('live');
-      };
-
-      eventSource.addEventListener('rooms_update', (evt) => {
-        if (!active) return;
-        try {
-          callbacks.onRoomsUpdate?.(JSON.parse(evt.data));
-        } catch { /* ignore */ }
-      });
-
-      eventSource.addEventListener('equipment_update', (evt) => {
-        if (!active) return;
-        try {
-          callbacks.onEquipmentUpdate?.(JSON.parse(evt.data));
-        } catch { /* ignore */ }
-      });
-
-      eventSource.onerror = () => {
-        if (!active) return;
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
-        }
-        callbacks.onStatus?.('polling');
-        ensurePolling();
-      };
-    } catch {
-      ensurePolling();
-    }
-  };
-
-  pollOnce().finally(() => {
-    if (active) connectSse();
-  });
-
+  // Also sync immediately when returning to the tab/app
   const appStateSub = AppState.addEventListener('change', (state) => {
-    if (state === 'active' && active) {
-      pollOnce();
-    }
+    if (state === 'active' && active) syncOnce();
   });
 
-  return () => {
-    active = false;
-    stopPolling();
-    if (eventSource) eventSource.close();
-    appStateSub?.remove?.();
+  const handleVisibility = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible' && active) {
+      syncOnce();
+    }
+  };
+  if (Platform.OS === 'web' && typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibility);
+  }
+
+  return {
+    refreshNow: syncOnce,
+    stop: () => {
+      active = false;
+      if (pollTimer) clearInterval(pollTimer);
+      appStateSub?.remove?.();
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+    },
   };
 };
