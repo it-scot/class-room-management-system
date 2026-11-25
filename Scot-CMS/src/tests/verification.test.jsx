@@ -335,6 +335,7 @@ describe('End-to-End Requirement Verification', () => {
       expect(screen.queryByRole('button', { name: /Staff Mobile View/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Enable Phone Alerts/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Share Link/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Table$/i })).not.toBeInTheDocument();
     });
 
     it('BookEquipmentPage renders summary analytics, equipment items, and 3-day policy', () => {

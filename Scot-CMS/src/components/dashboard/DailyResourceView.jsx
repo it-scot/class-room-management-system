@@ -1,5 +1,5 @@
 // src/components/dashboard/DailyResourceView.jsx
-// Interactive daily Gantt timeline + mobile-friendly list view + daily PDF download.
+// Interactive daily Gantt timeline + daily PDF download.
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { format, addDays, parseISO } from 'date-fns';
@@ -13,8 +13,6 @@ import {
   ArrowDownTrayIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  ViewColumnsIcon,
-  ListBulletIcon,
 } from '@heroicons/react/24/outline';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
@@ -37,7 +35,6 @@ const roomMatches = (bookingRoom, columnRoom) => {
 
 const DailyResourceView = ({ date, bookings, onDateChange, showPdfButton = true }) => {
   const [selectedBooking, setSelectedBooking] = useState(null);
-  const [viewMode, setViewMode] = useState('gantt'); // 'gantt' | 'list'
   const [selectedDate, setSelectedDate] = useState(
     typeof date === 'string' ? date : format(date || new Date(), 'yyyy-MM-dd')
   );
@@ -115,20 +112,6 @@ const DailyResourceView = ({ date, bookings, onDateChange, showPdfButton = true 
     });
   }, [selectedDate, bookings]);
 
-  // Group bookings by room for mobile-friendly List view
-  const groupedListView = useMemo(() => {
-    const map = new Map();
-    dayActiveBookings.forEach((b) => {
-      const bShort = (b.building || '').replace(/ \(.+\)/, '').trim();
-      const key = `${bShort}||${b.room}`;
-      if (!map.has(key)) {
-        map.set(key, { room: b.room, building: bShort, items: [] });
-      }
-      map.get(key).items.push(b);
-    });
-    return Array.from(map.values());
-  }, [dayActiveBookings]);
-
   const handleDownloadPdf = () => {
     try {
       downloadDailyBookingsPDF(bookings, selectedDate);
@@ -193,30 +176,6 @@ const DailyResourceView = ({ date, bookings, onDateChange, showPdfButton = true 
             </button>
           </div>
 
-          {/* View Mode Toggle (Gantt vs List for easy mobile reading) */}
-          <div className="flex items-center bg-surface-800 p-1 rounded-xl border border-white/10">
-            <button
-              type="button"
-              onClick={() => setViewMode('gantt')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                viewMode === 'gantt' ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ViewColumnsIcon className="w-4 h-4" />
-              Gantt
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                viewMode === 'list' ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ListBulletIcon className="w-4 h-4" />
-              Table
-            </button>
-          </div>
-
           {/* Download Daily PDF */}
           {showPdfButton && (
             <button
@@ -232,56 +191,8 @@ const DailyResourceView = ({ date, bookings, onDateChange, showPdfButton = true 
         </div>
       </div>
 
-      {/* View Mode: Table / List (great for phones!) */}
-      {viewMode === 'list' ? (
-        <div className="space-y-4">
-          {groupedListView.length === 0 ? (
-            <div className="bg-surface-800/60 border border-white/10 rounded-xl p-10 text-center">
-              <p className="text-slate-300 font-semibold">No classroom bookings on {formatDate(selectedDate)}</p>
-              <p className="text-xs text-slate-500 mt-1">Select another date or check back for live updates.</p>
-            </div>
-          ) : (
-            groupedListView.map((group) => (
-              <div key={`${group.building}-${group.room}`} className="bg-surface-800/80 border border-white/10 rounded-xl overflow-hidden">
-                <div className="px-4 py-2.5 bg-primary-500/15 border-b border-white/10 flex items-center justify-between">
-                  <span className="font-bold text-white text-sm">{group.room}</span>
-                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-white/10 text-primary-200">
-                    {group.building}
-                  </span>
-                </div>
-                <div className="divide-y divide-white/5">
-                  {group.items.map((b) => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => setSelectedBooking(b)}
-                      className="w-full text-left p-3.5 hover:bg-white/5 transition-colors grid grid-cols-1 sm:grid-cols-6 gap-2 items-center"
-                    >
-                      <div className="font-mono text-xs font-bold text-primary-300">
-                        {b.startTime} – {b.endTime}
-                      </div>
-                      <div className="text-xs text-slate-300 font-medium truncate">
-                        {b.department || '—'}
-                      </div>
-                      <div className="text-xs text-emerald-300 truncate sm:col-span-2">
-                        {b.bookedFor || b.inPersonLecturers || b.userEmail}
-                      </div>
-                      <div className="text-xs text-slate-300 truncate">
-                        {b.reason} {b.seats ? `(${b.seats} seats)` : ''}
-                      </div>
-                      <div className="text-xs text-amber-300 truncate">
-                        {b.specialRequirement || '—'}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      ) : (
-        /* View Mode: Gantt Timeline */
-        <div className="relative rounded-xl overflow-x-auto custom-scrollbar pb-2">
+      {/* Gantt Timeline */}
+      <div className="relative rounded-xl overflow-x-auto custom-scrollbar pb-2">
           <div className="min-w-[1200px] flex">
             {/* Y-Axis: Time Labels */}
             <div className="w-16 shrink-0 bg-surface-900/80 backdrop-blur-sm border-r border-white/10 sticky left-0 z-30 shadow-[4px_0_15px_rgba(0,0,0,0.2)]">
@@ -363,7 +274,6 @@ const DailyResourceView = ({ date, bookings, onDateChange, showPdfButton = true 
             </div>
           </div>
         </div>
-      )}
 
       {/* Booking Details Modal */}
       {selectedBooking && (

@@ -22,7 +22,7 @@ const GanttChartPage = () => {
             Gantt Chart View
           </h1>
           <p className="text-slate-400 text-xs sm:text-sm mt-1">
-            Daily classroom timeline grouped by building with table view and PDF export.
+            Daily classroom timeline grouped by building with PDF export.
           </p>
         </div>
       </div>
