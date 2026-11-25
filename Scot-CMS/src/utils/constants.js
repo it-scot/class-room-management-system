@@ -263,7 +263,7 @@ export const SUPERVISOR_EMAILS = [
   'disitha@scot.lk',
   'prbash@scot.lk',
   'yohan@scot.lk',
-  'ishan.madhuranaga@scot.lk',
+  'ishan.madhuranga@scot.lk',
 ];
 
 // Equipment catalog for Book Equipment tab

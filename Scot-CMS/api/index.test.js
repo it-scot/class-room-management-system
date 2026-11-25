@@ -152,9 +152,11 @@ describe('SCOT Facility Management System — Backend API Tests', () => {
       expect(inviteMail.to).not.toContain('it@scot.lk');
       expect(inviteMail.icalEvent).toBeDefined();
 
-      // Call 2: Classroom trigger alert to dayananda@scot.lk
+      // Call 2: Classroom trigger alert strictly to dayananda@scot.lk (NOT equipment-only recipients)
       const opsMail = sendMailMock.mock.calls[1][0];
       expect(opsMail.to).toBe('dayananda@scot.lk');
+      expect(opsMail.to).not.toContain('ishan.madhuranga@scot.lk');
+      expect(opsMail.to).not.toContain('disitha@scot.lk');
     });
   });
 
@@ -206,7 +208,7 @@ describe('SCOT Facility Management System — Backend API Tests', () => {
       expect(res.body.error).toContain('3 days');
     });
 
-    it('should accept equipment booking >= 3 days ahead and send calendar invite + ops alert', async () => {
+    it('should accept equipment booking >= 3 days ahead and notify Book For, Supervisor, dayananda@scot.lk, ishan.madhuranga@scot.lk, and disitha@scot.lk', async () => {
       sendMailMock.mockClear();
       const future = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const res = await request(app)
@@ -215,9 +217,9 @@ describe('SCOT Facility Management System — Backend API Tests', () => {
           id: 'eq_2',
           userEmail: 'user@scot.lk',
           bookForEmails: ['nimantha@scot.lk'],
-          supervisorEmail: 'disitha@scot.lk',
+          supervisorEmail: 'duminda@scot.lk',
           items: [{ id: 'camera', name: 'Camera', quantity: 1 }, { id: 'tripod', name: 'Tripod', quantity: 1 }],
-          location: 'Main Hall',
+          location: 'Building 1 - Board Room',
           department: 'Marketing Department',
           reason: 'Lecture Conduction',
           date: future,
@@ -228,8 +230,10 @@ describe('SCOT Facility Management System — Backend API Tests', () => {
       expect(res.body.ok).toBe(true);
       expect(sendMailMock).toHaveBeenCalledTimes(2);
       expect(sendMailMock.mock.calls[0][0].to).toContain('nimantha@scot.lk');
-      expect(sendMailMock.mock.calls[0][0].to).toContain('disitha@scot.lk');
-      expect(sendMailMock.mock.calls[1][0].to).toBe('dayananda@scot.lk');
+      expect(sendMailMock.mock.calls[0][0].to).toContain('duminda@scot.lk');
+      expect(sendMailMock.mock.calls[1][0].to).toContain('dayananda@scot.lk');
+      expect(sendMailMock.mock.calls[1][0].to).toContain('ishan.madhuranga@scot.lk');
+      expect(sendMailMock.mock.calls[1][0].to).toContain('disitha@scot.lk');
     });
   });
 });

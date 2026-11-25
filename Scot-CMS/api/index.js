@@ -13,6 +13,11 @@ const { cert }   = require('firebase-admin/app');
 const APP_NAME = 'SCOT Facility Management System';
 const APP_TAG  = 'SCOT FMS';
 const OPERATIONS_ALERT_EMAIL = 'dayananda@scot.lk';
+const EQUIPMENT_ALERT_EMAILS = [
+  OPERATIONS_ALERT_EMAIL,
+  'ishan.madhuranga@scot.lk',
+  'disitha@scot.lk',
+];
 const ALLOWED_DOMAIN = 'scot.lk';
 
 const GANTT_BUILDINGS = {
@@ -1059,13 +1064,15 @@ app.post('/api/equipment-bookings/new', async (req, res) => {
         });
       }
 
-      if (!recipients.includes(OPERATIONS_ALERT_EMAIL)) {
+      const equipmentAlerts = EQUIPMENT_ALERT_EMAILS.filter(e => !recipients.includes(e));
+      if (equipmentAlerts.length > 0) {
         await transporter.sendMail({
           from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-          to:      OPERATIONS_ALERT_EMAIL,
+          to:      equipmentAlerts.join(', '),
           subject: `[${APP_TAG} Alert] Equipment Booked: ${itemsText} (${booking.date} ${booking.startTime}–${booking.endTime})`,
           html:    equipmentBookingHtml(booking, 'New Equipment Booking Alert'),
         });
+        console.log('[EQUIPMENT ALERT SENT] →', equipmentAlerts.join(', '));
       }
     } catch (emailErr) {
       console.error('[EQUIPMENT EMAIL] Error:', emailErr.message);
@@ -1101,13 +1108,15 @@ app.post('/api/equipment-bookings/status', async (req, res) => {
             html:    equipmentBookingHtml(booking, `Equipment Booking ${booking.status}`),
           });
         }
-        if (!recipients.includes(OPERATIONS_ALERT_EMAIL)) {
+        const equipmentAlerts = EQUIPMENT_ALERT_EMAILS.filter(e => !recipients.includes(e));
+        if (equipmentAlerts.length > 0) {
           await transporter.sendMail({
             from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-            to:      OPERATIONS_ALERT_EMAIL,
+            to:      equipmentAlerts.join(', '),
             subject: `[${APP_TAG} Alert] Equipment Booking ${booking.status}: ${itemsText}`,
             html:    equipmentBookingHtml(booking, `Equipment Booking ${booking.status}`),
           });
+          console.log('[EQUIPMENT ALERT SENT] Status update →', equipmentAlerts.join(', '));
         }
       })(),
       (async () => {
