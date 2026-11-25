@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "SCOT Live Schedule",
+    "slug": "scot-gantt-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b1120",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "lk.scot.liveschedule"
+    },
+    "android": {
+      "package": "lk.scot.liveschedule",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b1120"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "name": "SCOT Live Schedule"
+    }
+  }
+}

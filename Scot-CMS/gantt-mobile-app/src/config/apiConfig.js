@@ -1,0 +1,161 @@
+// src/config/apiConfig.js
+// Central API configuration for the SCOT Live Schedule React Native app.
+// No login or signup screen — connects directly using the read-only Gantt API key.
+
+export const DEFAULT_PORTAL_URL =
+  process.env.EXPO_PUBLIC_PORTAL_API_URL || 'http://localhost:3001';
+
+export const DEFAULT_GANTT_API_KEY =
+  process.env.EXPO_PUBLIC_GANTT_API_KEY || '';
+
+export const DEFAULT_BUILDINGS = {
+  'Building 1 (Main)': [
+    'Board Room',
+    'E&E Lab',
+    'Admission Office',
+    'Classroom 101',
+    'Classroom 102',
+    'Classroom 103',
+    'Computer Lab',
+    'Admin Room',
+    'ME Lab',
+  ],
+  'Building 2 (New)': [
+    'Library',
+    'Classroom 101',
+    'Classroom 102',
+    'Classroom 201',
+    'Classroom 202',
+    'Classroom 301',
+  ],
+};
+
+// Realistic sample schedule shown automatically ONLY when no live API server/key
+// is connected yet (so local preview works out of the box without any login screen).
+export const buildPreviewData = (todayStr) => ({
+  bookings: [
+    {
+      id: 'preview-1',
+      building: 'Building 1 (Main)',
+      room: 'Board Room',
+      date: todayStr,
+      startTime: '08:30',
+      endTime: '10:30',
+      seats: 10,
+      department: 'C-Suite',
+      bookedFor: 'duminda@scot.lk',
+      reason: 'Lecture Conduction',
+      specialRequirement: 'HDMI + Chromecast check before 8:15 AM',
+      status: 'Approved',
+    },
+    {
+      id: 'preview-2',
+      building: 'Building 1 (Main)',
+      room: 'E&E Lab',
+      date: todayStr,
+      startTime: '09:00',
+      endTime: '12:00',
+      seats: 36,
+      department: 'E&E Department',
+      bookedFor: 'shanaka@scot.lk',
+      reason: 'Class Conduction',
+      specialRequirement: 'Projector 2 & extra extension cord needed',
+      status: 'Approved',
+    },
+    {
+      id: 'preview-3',
+      building: 'Building 1 (Main)',
+      room: 'Classroom 101',
+      date: todayStr,
+      startTime: '11:00',
+      endTime: '13:00',
+      seats: 24,
+      department: 'C&C Department',
+      bookedFor: 'jayanai@scot.lk',
+      reason: 'Class Conduction',
+      specialRequirement: '',
+      status: 'Approved',
+    },
+    {
+      id: 'preview-4',
+      building: 'Building 1 (Main)',
+      room: 'Computer Lab',
+      date: todayStr,
+      startTime: '13:30',
+      endTime: '16:30',
+      seats: 22,
+      department: 'Digital Infrastructure Department',
+      bookedFor: 'disitha@scot.lk',
+      reason: 'Exam Conduction',
+      specialRequirement: 'Silent zone — open 20 mins prior',
+      status: 'Approved',
+    },
+    {
+      id: 'preview-5',
+      building: 'Building 2 (New)',
+      room: 'Library',
+      date: todayStr,
+      startTime: '10:00',
+      endTime: '12:30',
+      seats: 28,
+      department: 'SoBM Department',
+      bookedFor: 'shamila@scot.lk',
+      reason: 'Lecture Conduction',
+      specialRequirement: 'Expand seating to 28 chairs',
+      status: 'Approved',
+    },
+    {
+      id: 'preview-6',
+      building: 'Building 2 (New)',
+      room: 'Classroom 201',
+      date: todayStr,
+      startTime: '14:00',
+      endTime: '17:00',
+      seats: 24,
+      department: 'ME Department',
+      bookedFor: 'nimantha@scot.lk',
+      reason: 'Class Conduction',
+      specialRequirement: '',
+      status: 'Approved',
+    },
+  ],
+  equipmentBookings: [
+    {
+      id: 'eq-preview-1',
+      items: [
+        { id: 'generator', name: 'Generator', quantity: 1 },
+        { id: 'extension-cord', name: 'Extension Cord', quantity: 3 },
+      ],
+      itemsSummary: 'Generator (x1), Extension Cord (x3)',
+      totalQuantity: 4,
+      location: 'Building 1 — Exam Wing',
+      date: todayStr,
+      startTime: '08:30',
+      endTime: '13:00',
+      department: 'Registrar Office',
+      bookedFor: 'menura@scot.lk',
+      reason: 'Exam Conduction',
+      specialRequirement: 'Fuel check & standby 30 mins prior',
+      status: 'Approved',
+    },
+    {
+      id: 'eq-preview-2',
+      items: [
+        { id: 'camera', name: 'Camera', quantity: 1 },
+        { id: 'tripod', name: 'Tripod', quantity: 1 },
+        { id: 'wireless-mic', name: 'Wireless Microphone', quantity: 2 },
+      ],
+      itemsSummary: 'Camera (x1), Tripod (x1), Wireless Microphone (x2)',
+      totalQuantity: 4,
+      location: 'Building 2 — Library Hall',
+      date: todayStr,
+      startTime: '10:00',
+      endTime: '12:30',
+      department: 'Marketing Department',
+      bookedFor: 'yohan@scot.lk',
+      reason: 'Lecture Conduction',
+      specialRequirement: 'Fully charged batteries',
+      status: 'Approved',
+    },
+  ],
+});

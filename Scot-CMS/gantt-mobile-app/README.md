@@ -1,44 +1,24 @@
-# SCOT Live Schedule — Standalone Mobile App (PWA)
+# SCOT Live Schedule — React Native (Expo) Mobile App
 
-A dedicated, read-only mobile application for viewing the **SCOT Classroom Gantt Chart**, **Schedule Table / Staff Cards**, and **Equipment List**, downloading **PDF & Excel (.xlsx)** sheets, and receiving **real-time booking notifications** — powered exclusively by a scoped **Gantt API Key** without exposing the internal employee portal.
+A dedicated, zero-login React Native mobile application powered solely by the scoped **Gantt API Key** from the SCOT Facility Management System Admin Panel.
 
----
+## Features
+- **No Login / No Signup** — opens straight into the live classroom schedule.
+- **Horizontal Gantt Timeline** — 08:00–18:00 room timeline with live pulsing `NOW` line, Building 1 / Building 2 filters, and `Booked Only / All Rooms` toggle.
+- **Table & Staff Cards View** — structured schedule table and mobile cards with search, live status (`LIVE NOW`, `IN Xm`, `UPCOMING`), and persistent **Opened / Mark Ready** checklist.
+- **Equipment List & Checklist** — view daily or upcoming equipment bookings with quantity summaries and **Issued / Mark Ready** toggles.
+- **PDF & Excel (`.xlsx`) Downloads** — native `expo-print` / `expo-sharing` on Android & iOS, plus instant file downloads on web.
+- **Real-Time Sync & Notifications** — SSE stream + automatic 10s polling fallback with native/OS notifications and alert feed.
 
-## 1. Generate Your API Key in the Main Portal
-1. Sign in to the main SCOT Portal as an Admin and open **Admin Panel** (`/admin`).
-2. Click **Gantt API Key** → **Generate API Key**.
-3. Copy the **API Key** (`scot_gantt_...`) and the **Portal Server URL** (e.g., `https://your-portal.vercel.app` or `http://localhost:3001`).
+## Connect to Live Portal
+1. In the main portal's **Admin Panel** (`/admin`), click **Gantt API Key** → **Generate API Key**.
+2. Set `EXPO_PUBLIC_PORTAL_API_URL` and `EXPO_PUBLIC_GANTT_API_KEY` in `gantt-mobile-app/.env`, **or** tap the **Settings (gear)** icon in the mobile app header to paste your URL & API key directly.
 
-*(Optional fallback: you can also set `GANTT_PUBLIC_API_KEY` in the main portal's `.env` / Vercel Environment Variables.)*
-
----
-
-## 2. Run Locally
+## Run Locally
 ```bash
 cd gantt-mobile-app
 npm install
-npm run dev
+npm run web      # Local mobile preview in browser (http://localhost:8081)
+npm run android  # Run on Android emulator / Expo Go
+npm run ios      # Run on iOS simulator / Expo Go
 ```
-Open `http://localhost:5174` on your browser or phone (same Wi-Fi) and paste the Portal Server URL + API Key.
-
-### Zero-Login Pre-Configuration (Optional)
-Create `gantt-mobile-app/.env.local` if you want devices to connect automatically without typing the key:
-```env
-VITE_PORTAL_API_URL=https://your-portal.vercel.app
-VITE_GANTT_API_KEY=scot_gantt_...
-```
-
----
-
-## 3. Deploy as a Separate Mobile App (Vercel)
-1. Deploy the `gantt-mobile-app/` directory as its own Vercel project (completely separate domain from your internal employee portal).
-2. Staff open the URL on Android (Chrome) or iOS (Safari) and tap **Add to Home Screen** — it installs like a native mobile app with real-time notifications.
-
----
-
-## 4. API Endpoints Consumed (Read-Only)
-All requests require `x-api-key: <KEY>` (or `?key=<KEY>` for SSE):
-- `GET /api/gantt/verify` — Validate key & fetch building/room list
-- `GET /api/gantt/schedule` — Active classroom & equipment schedule snapshot
-- `GET /api/gantt/equipment` — Active equipment reservations
-- `GET /api/gantt/stream` — Real-time Server-Sent Events (SSE) push stream with automatic polling fallback
