@@ -62,7 +62,7 @@ vi.mock('../services/bookingService', () => ({
         status: 'Approved',
       },
     ]);
-    return () => {};
+    return () => { };
   }),
 }));
 
@@ -98,12 +98,12 @@ vi.mock('jspdf', () => ({
         getNumberOfPages: () => 1,
       };
     }
-    setFillColor() {}
-    rect() {}
-    setTextColor() {}
-    setFont() {}
-    setFontSize() {}
-    text() {}
+    setFillColor() { }
+    rect() { }
+    setTextColor() { }
+    setFont() { }
+    setFontSize() { }
+    text() { }
     save(filename) { pdfSaveMock(filename); }
   },
 }));
@@ -320,80 +320,94 @@ describe('End-to-End Requirement Verification', () => {
     expect(screen.getByText('Need markers')).toBeInTheDocument();
   });
 
-  it('GanttChartPage public view renders view-only schedule, phone alerts, and PDF download', () => {
-    render(
-      <MemoryRouter>
-        <GanttChartPage isPublicView={true} />
-      </MemoryRouter>
-    );
+    it('GanttChartPage public view renders mobile-first security schedule, visual Gantt, alerts, and PDF download', () => {
+      render(
+        <MemoryRouter>
+          <GanttChartPage isPublicView={true} />
+        </MemoryRouter>
+      );
 
-    expect(screen.getByText(/Public View-Only Schedule/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Enable Phone Alerts/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument();
-    // Should NOT show navigation links like Book Room or Book Equipment
-    expect(screen.queryByText('Book Room')).not.toBeInTheDocument();
-    expect(screen.queryByText('Book Equipment')).not.toBeInTheDocument();
+      expect(screen.getByText(/Live Schedule · Security & Support Staff/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Enable Phone Alerts/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Download Daily PDF/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Staff Cards/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Visual Gantt/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Building 1/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Building 2/i })).toBeInTheDocument();
+
+      // Switch to Staff Cards view and check Board Room & Mark Ready button
+      fireEvent.click(screen.getByRole('button', { name: /Staff Cards/i }));
+      expect(screen.getAllByText('Board Room').length).toBeGreaterThan(0);
+      expect(screen.getAllByRole('button', { name: /Mark Ready/i }).length).toBeGreaterThan(0);
+
+      // Switch to Horizontal Visual Gantt view
+      fireEvent.click(screen.getByRole('button', { name: /Visual Gantt/i }));
+      expect(screen.getByText(/Visual Classroom Timeline/i)).toBeInTheDocument();
+
+      // Should NOT show navigation links like Book Room or Book Equipment
+      expect(screen.queryByText('Book Room')).not.toBeInTheDocument();
+      expect(screen.queryByText('Book Equipment')).not.toBeInTheDocument();
+    });
+
+    it('BookEquipmentPage renders summary analytics, equipment items, and 3-day policy', () => {
+      render(
+        <MemoryRouter>
+          <BookEquipmentPage />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Book Equipment')).toBeInTheDocument();
+      expect(screen.getByText(/Active Equipment Bookings/i)).toBeInTheDocument();
+      expect(screen.getByText(/Equipment Usage Summary/i)).toBeInTheDocument();
+      expect(screen.getAllByText('Generator').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Projector').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Extension Cord').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Camera').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Tripod').length).toBeGreaterThan(0);
+    });
+
+    it('PDF and Excel exporters run cleanly without errors', () => {
+      const sampleRooms = [
+        {
+          id: 'r1',
+          building: 'Building 1 (Main)',
+          room: 'Board Room',
+          date: '2026-11-25',
+          startTime: '09:00',
+          endTime: '12:00',
+          department: 'C&C Department',
+          bookedFor: 'jayanai@scot.lk',
+          reason: 'Class Conduction',
+          seats: 10,
+          specialRequirement: 'Extra chairs',
+          status: 'Approved',
+        },
+      ];
+      downloadDailyBookingsPDF(sampleRooms, '2026-11-25');
+      expect(pdfSaveMock).toHaveBeenCalledWith('SCOT_Classroom_Schedule_2026-11-25.pdf');
+
+      downloadRoomExcelReport(sampleRooms, '2026-11-01', '2026-11-30');
+      expect(xlsxWriteFileMock).toHaveBeenCalledTimes(1);
+
+      const sampleEq = [
+        {
+          id: 'eq1',
+          items: [{ name: 'Generator', quantity: 1 }, { name: 'Camera', quantity: 2 }],
+          date: '2026-12-05',
+          startTime: '09:00',
+          endTime: '12:00',
+          location: 'Main Hall',
+          department: 'Admin Department',
+          reason: 'Exam Conduction',
+          bookedFor: 'kasun@scot.lk',
+          supervisorEmail: 'duminda@scot.lk',
+          status: 'Approved',
+        },
+      ];
+      downloadEquipmentExcelReport(sampleEq);
+      expect(xlsxWriteFileMock).toHaveBeenCalledTimes(2);
+      const [wb, filename] = xlsxWriteFileMock.mock.calls[1];
+      expect(wb.SheetNames).toEqual(['Equipment Bookings', 'Summary']);
+      expect(filename).toMatch(/^SCOT_Equipment_Bookings_Report_.*\.xlsx$/);
+    });
   });
-
-  it('BookEquipmentPage renders summary analytics, equipment items, and 3-day policy', () => {
-    render(
-      <MemoryRouter>
-        <BookEquipmentPage />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText('Book Equipment')).toBeInTheDocument();
-    expect(screen.getByText(/Active Equipment Bookings/i)).toBeInTheDocument();
-    expect(screen.getByText(/Equipment Usage Summary/i)).toBeInTheDocument();
-    expect(screen.getAllByText('Generator').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Projector').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Extension Cord').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Camera').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Tripod').length).toBeGreaterThan(0);
-  });
-
-  it('PDF and Excel exporters run cleanly without errors', () => {
-    const sampleRooms = [
-      {
-        id: 'r1',
-        building: 'Building 1 (Main)',
-        room: 'Board Room',
-        date: '2026-11-25',
-        startTime: '09:00',
-        endTime: '12:00',
-        department: 'C&C Department',
-        bookedFor: 'jayanai@scot.lk',
-        reason: 'Class Conduction',
-        seats: 10,
-        specialRequirement: 'Extra chairs',
-        status: 'Approved',
-      },
-    ];
-    downloadDailyBookingsPDF(sampleRooms, '2026-11-25');
-    expect(pdfSaveMock).toHaveBeenCalledWith('SCOT_Classroom_Schedule_2026-11-25.pdf');
-
-    downloadRoomExcelReport(sampleRooms, '2026-11-01', '2026-11-30');
-    expect(xlsxWriteFileMock).toHaveBeenCalledTimes(1);
-
-    const sampleEq = [
-      {
-        id: 'eq1',
-        items: [{ name: 'Generator', quantity: 1 }, { name: 'Camera', quantity: 2 }],
-        date: '2026-12-05',
-        startTime: '09:00',
-        endTime: '12:00',
-        location: 'Main Hall',
-        department: 'Admin Department',
-        reason: 'Exam Conduction',
-        bookedFor: 'kasun@scot.lk',
-        supervisorEmail: 'duminda@scot.lk',
-        status: 'Approved',
-      },
-    ];
-    downloadEquipmentExcelReport(sampleEq);
-    expect(xlsxWriteFileMock).toHaveBeenCalledTimes(2);
-    const [wb, filename] = xlsxWriteFileMock.mock.calls[1];
-    expect(wb.SheetNames).toEqual(['Equipment Bookings', 'Summary']);
-    expect(filename).toMatch(/^SCOT_Equipment_Bookings_Report_.*\.xlsx$/);
-  });
-});
