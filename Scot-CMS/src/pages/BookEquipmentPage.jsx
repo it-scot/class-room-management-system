@@ -21,6 +21,7 @@ import {
 import { getEquipmentVisual, EquipmentChip } from '../components/booking/EquipmentIcons';
 
 import {
+  BUILDINGS,
   EQUIPMENT_ITEMS,
   TIME_SLOTS,
   DEPARTMENTS,
@@ -91,6 +92,8 @@ const BookEquipmentPage = () => {
     date: '',
     startTime: '',
     endTime: '',
+    locationOption: '',
+    customLocation: '',
     location: '',
     department: '',
     reasonCategory: '',
@@ -284,6 +287,8 @@ const BookEquipmentPage = () => {
         date: '',
         startTime: '',
         endTime: '',
+        locationOption: '',
+        customLocation: '',
         location: '',
         department: '',
         reasonCategory: '',
@@ -745,20 +750,58 @@ const BookEquipmentPage = () => {
                   </div>
                 </div>
 
-                {/* Location / Venue */}
+                {/* Location / Venue Dropdown (Buildings & Classrooms + Other) */}
                 <div className="input-group">
                   <label className="input-label" htmlFor="eq-location">Venue / Location *</label>
                   <div className="relative">
                     <MapPinIcon className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
+                    <select
                       id="eq-location"
-                      type="text"
                       className="input pl-10"
-                      placeholder="e.g. Building 1 - Classroom 101, Main Hall, Outdoor Lawn…"
-                      value={formData.location}
-                      onChange={e => { update({ location: e.target.value }); clearErr('location'); }}
-                    />
+                      value={formData.locationOption}
+                      onChange={e => {
+                        const val = e.target.value;
+                        update({
+                          locationOption: val,
+                          location: val === 'Other' ? formData.customLocation : val,
+                        });
+                        clearErr('location');
+                      }}
+                    >
+                      <option value="">— select venue / classroom —</option>
+                      {Object.entries(BUILDINGS).map(([buildingName, rooms]) => {
+                        const bShort = buildingName.replace(/ \(.+\)/, '').trim();
+                        return (
+                          <optgroup key={buildingName} label={buildingName} className="bg-surface-800 text-white">
+                            {rooms.map(room => {
+                              const label = `${bShort} - ${room}`;
+                              return (
+                                <option key={label} value={label}>
+                                  {label}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        );
+                      })}
+                      <optgroup label="Other Venue" className="bg-surface-800 text-white">
+                        <option value="Other">Other (Specify location)</option>
+                      </optgroup>
+                    </select>
                   </div>
+                  {formData.locationOption === 'Other' && (
+                    <input
+                      id="eq-custom-location"
+                      type="text"
+                      className="input mt-2.5 animate-fade-in"
+                      placeholder="Type custom venue (e.g. Main Hall, Outdoor Lawn)…"
+                      value={formData.customLocation}
+                      onChange={e => {
+                        update({ customLocation: e.target.value, location: e.target.value });
+                        clearErr('location');
+                      }}
+                    />
+                  )}
                   <ErrorMsg msg={errors.location} />
                 </div>
 
