@@ -5,9 +5,15 @@
 import React, { useState, useMemo } from 'react';
 import { useBookings }           from '../hooks/useBookings';
 import { useAllEquipmentBookings } from '../hooks/useEquipmentBookings';
+import { useEquipmentCatalog }   from '../hooks/useEquipmentCatalog';
 import { useAuth }               from '../store/AuthContext';
 import { updateBookingStatus }   from '../services/bookingService';
 import { updateEquipmentBookingStatus } from '../services/equipmentBookingService';
+import {
+  saveEquipmentCatalogItem,
+  removeEquipmentCatalogItem,
+} from '../services/equipmentCatalogService';
+import { getEquipmentVisual }    from '../components/booking/EquipmentIcons';
 import {
   getGanttApiKeyConfig,
   rotateGanttApiKey,
@@ -43,22 +49,42 @@ import {
   EyeIcon,
   EyeSlashIcon,
   TableCellsIcon,
+  PlusIcon,
+  TrashIcon,
+  CubeIcon,
+  PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 const STATUS_FILTERS = ['All', BOOKING_STATUS.PENDING, BOOKING_STATUS.APPROVED, BOOKING_STATUS.REJECTED, BOOKING_STATUS.CANCELLED];
+const EQUIPMENT_CATEGORIES = ['Power', 'AV Equipment', 'Media', 'Audio', 'Accessories', 'Classroom', 'General'];
+
+const EMPTY_CATALOG_FORM = {
+  id: '',
+  name: '',
+  category: 'AV Equipment',
+  maxQuantity: 1,
+  description: '',
+  tags: '',
+};
 
 const AdminPanel = () => {
   const { user } = useAuth();
   const { bookings: roomBookings, loading: roomsLoading } = useBookings(true);
   const { bookings: equipmentBookings, loading: eqLoading } = useAllEquipmentBookings();
+  const { items: catalogItems, loading: catalogLoading } = useEquipmentCatalog();
 
-  const [activeTab, setActiveTab] = useState('rooms'); // 'rooms' | 'equipment'
+  const [activeTab, setActiveTab] = useState('rooms'); // 'rooms' | 'equipment' | 'catalog'
   const [filter,    setFilter]    = useState('All');
   const [search,    setSearch]    = useState('');
   const [dateFrom,  setDateFrom]  = useState('');
   const [dateTo,    setDateTo]    = useState('');
   const [updating,  setUpdating]  = useState({});
+
+  // Equipment Catalog Modal state
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [catalogForm, setCatalogForm]           = useState(EMPTY_CATALOG_FORM);
+  const [catalogSaving, setCatalogSaving]       = useState(false);
 
   // API Key modal state
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
@@ -258,7 +284,91 @@ const AdminPanel = () => {
     setAdminReason('');
   };
 
-  const loading = activeTab === 'rooms' ? roomsLoading : eqLoading;
+  // Equipment Catalog CRUD handlers
+  const openAddEquipmentModal = () => {
+    setCatalogForm(EMPTY_CATALOG_FORM);
+    setCatalogModalOpen(true);
+  };
+
+  const openEditEquipmentModal = (item) => {
+    setCatalogForm({
+      id: item.id,
+      name: item.name,
+      category: item.category || 'General',
+      maxQuantity: Number(item.maxQuantity || 1),
+      description: item.description || '',
+      tags: Array.isArray(item.tags) ? item.tags.join(', ') : '',
+    });
+    setCatalogModalOpen(true);
+  };
+
+  const handleSaveCatalogItem = async (e) => {
+    e.preventDefault();
+    if (!catalogForm.name.trim()) {
+      toast.error('Please enter an equipment name.');
+      return;
+    }
+    const qty = Number(catalogForm.maxQuantity);
+    if (isNaN(qty) || qty < 1) {
+      toast.error('Quantity must be at least 1.');
+      return;
+    }
+    setCatalogSaving(true);
+    try {
+      await saveEquipmentCatalogItem(
+        {
+          id: catalogForm.id || undefined,
+          name: catalogForm.name.trim(),
+          category: catalogForm.category,
+          maxQuantity: qty,
+          description: catalogForm.description.trim(),
+          tags: catalogForm.tags,
+        },
+        user?.email || 'admin@scot.lk'
+      );
+      toast.success(catalogForm.id ? 'Equipment updated!' : 'Equipment added to Book Equipment catalog!');
+      setCatalogModalOpen(false);
+    } catch (err) {
+      console.error('[Catalog Save]', err);
+      toast.error('Failed to save equipment. Ensure you are signed in with an Admin @scot.lk account.');
+    } finally {
+      setCatalogSaving(false);
+    }
+  };
+
+  const handleQuickAdjustStock = async (item, delta) => {
+    const nextQty = Math.max(1, Number(item.maxQuantity || 1) + delta);
+    if (nextQty === Number(item.maxQuantity || 1)) return;
+    setUpdating((u) => ({ ...u, [`cat-${item.id}`]: true }));
+    try {
+      await saveEquipmentCatalogItem(
+        { ...item, maxQuantity: nextQty },
+        user?.email || 'admin@scot.lk'
+      );
+      toast.success(`${item.name} quantity updated to ${nextQty}`);
+    } catch (err) {
+      console.error('[Catalog Qty]', err);
+      toast.error('Failed to update quantity.');
+    } finally {
+      setUpdating((u) => { const n = { ...u }; delete n[`cat-${item.id}`]; return n; });
+    }
+  };
+
+  const handleDeleteCatalogItem = async (item) => {
+    if (!window.confirm(`Remove "${item.name}" from the Book Equipment catalog?`)) return;
+    setUpdating((u) => ({ ...u, [`cat-${item.id}`]: true }));
+    try {
+      await removeEquipmentCatalogItem(item.id, user?.email || 'admin@scot.lk');
+      toast.success(`Removed "${item.name}" from catalog.`);
+    } catch (err) {
+      console.error('[Catalog Remove]', err);
+      toast.error('Failed to remove equipment.');
+    } finally {
+      setUpdating((u) => { const n = { ...u }; delete n[`cat-${item.id}`]; return n; });
+    }
+  };
+
+  const loading = activeTab === 'rooms' ? roomsLoading : activeTab === 'equipment' ? eqLoading : catalogLoading;
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in">
@@ -297,7 +407,7 @@ const AdminPanel = () => {
                 CSV
               </button>
             </>
-          ) : (
+          ) : activeTab === 'equipment' ? (
             <button
               id="download-equipment-excel-btn"
               onClick={handleDownloadEquipmentExcel}
@@ -306,12 +416,22 @@ const AdminPanel = () => {
               <TableCellsIcon className="w-4 h-4" />
               Download Equipment Excel (.xlsx)
             </button>
+          ) : (
+            <button
+              id="add-equipment-item-btn"
+              type="button"
+              onClick={openAddEquipmentModal}
+              className="btn-primary btn-sm flex items-center gap-1.5"
+            >
+              <PlusIcon className="w-4 h-4" />
+              Add Equipment
+            </button>
           )}
         </div>
       </div>
 
-      {/* Section Tabs: Room Bookings vs Equipment Bookings */}
-      <div className="flex items-center gap-2 mb-5 bg-surface-800 p-1 rounded-xl border border-white/10 w-fit">
+      {/* Section Tabs: Room Bookings vs Equipment Bookings vs Manage Equipment */}
+      <div className="flex items-center gap-2 mb-5 bg-surface-800 p-1 rounded-xl border border-white/10 w-fit flex-wrap">
         <button
           type="button"
           onClick={() => setActiveTab('rooms')}
@@ -334,9 +454,22 @@ const AdminPanel = () => {
           Equipment Bookings
           <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-white/15">{equipmentBookings.length}</span>
         </button>
+        <button
+          type="button"
+          id="tab-manage-equipment"
+          onClick={() => setActiveTab('catalog')}
+          className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 ${
+            activeTab === 'catalog' ? 'bg-primary-600 text-white shadow' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <CubeIcon className="w-4 h-4" />
+          Manage Equipment
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-white/15">{catalogItems.length}</span>
+        </button>
       </div>
 
-      {/* Filters */}
+      {/* Filters (only for booking tables) */}
+      {activeTab !== 'catalog' && (
       <div className="glass-dark p-3 sm:p-4 mb-4 sm:mb-6 flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
@@ -411,11 +544,112 @@ const AdminPanel = () => {
           ))}
         </div>
       </div>
+      )}
 
-      {/* Tables */}
+      {/* Tables / Catalog */}
       {loading ? (
         <div className="space-y-3 mt-4">
           {[1, 2, 3, 4, 5].map(i => <div key={i} className="animate-pulse bg-white/5 h-16 rounded-xl w-full" />)}
+        </div>
+      ) : activeTab === 'catalog' ? (
+        <div className="space-y-4 animate-fade-in">
+          <div className="rounded-2xl bg-[#0e1529]/90 border border-white/[0.08] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-white">Equipment Inventory & Quantities</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Items added or updated here immediately appear on the Book Equipment page with live same-day stock limits.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openAddEquipmentModal}
+              className="btn-primary btn-sm self-start sm:self-auto flex items-center gap-1.5"
+            >
+              <PlusIcon className="w-4 h-4" />
+              Add New Equipment
+            </button>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {catalogItems.map((item) => {
+              const { Icon, wellClass, dotClass } = getEquipmentVisual(item.id || item.name);
+              const busy = !!updating[`cat-${item.id}`];
+
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-2xl bg-[#0e1529]/90 border border-white/[0.08] hover:border-white/[0.16] transition-all p-4 flex flex-col gap-3"
+                >
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${wellClass}`}>
+                        <Icon active className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-white truncate">{item.name}</p>
+                        <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] px-2 py-0.5 text-[10px] font-medium text-slate-300">
+                          <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                          <span>{item.category}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openEditEquipmentModal(item)}
+                        disabled={busy}
+                        className="p-1.5 rounded-lg bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                        title="Edit equipment"
+                      >
+                        <PencilSquareIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCatalogItem(item)}
+                        disabled={busy}
+                        className="p-1.5 rounded-lg bg-white/5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Remove equipment"
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed flex-1">
+                    {item.description}
+                  </p>
+
+                  <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-white/[0.07]">
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      Total Stock Qty
+                    </span>
+                    <div className="flex items-center gap-1.5 bg-[#0a1020] border border-white/10 rounded-xl px-1.5 py-0.5">
+                      <button
+                        type="button"
+                        disabled={busy || Number(item.maxQuantity) <= 1}
+                        onClick={() => handleQuickAdjustStock(item, -1)}
+                        className="w-6 h-6 rounded-lg text-slate-300 hover:bg-white/10 disabled:opacity-35 font-bold text-sm"
+                      >
+                        -
+                      </button>
+                      <span className="text-xs font-extrabold text-white min-w-[24px] text-center font-mono">
+                        {item.maxQuantity}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => handleQuickAdjustStock(item, 1)}
+                        className="w-6 h-6 rounded-lg text-slate-300 hover:bg-white/10 disabled:opacity-35 font-bold text-sm"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : activeTab === 'rooms' ? (
         filteredRooms.length === 0 ? (
@@ -808,6 +1042,100 @@ const AdminPanel = () => {
             </div>
           )}
         </div>
+      </Modal>
+      {/* Add / Edit Equipment Catalog Modal */}
+      <Modal
+        isOpen={catalogModalOpen}
+        onClose={() => setCatalogModalOpen(false)}
+        title={catalogForm.id ? 'Edit Equipment Item' : 'Add New Equipment'}
+        size="md"
+      >
+        <form onSubmit={handleSaveCatalogItem} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Equipment Name *
+            </label>
+            <input
+              type="text"
+              required
+              className="input w-full"
+              placeholder="e.g. Laser Pointer, Portable Speaker, Extension Cord"
+              value={catalogForm.name}
+              onChange={(e) => setCatalogForm((f) => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Category *
+              </label>
+              <select
+                className="input w-full"
+                value={catalogForm.category}
+                onChange={(e) => setCatalogForm((f) => ({ ...f, category: e.target.value }))}
+              >
+                {EQUIPMENT_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Total Quantity Available *
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="500"
+                required
+                className="input w-full"
+                value={catalogForm.maxQuantity}
+                onChange={(e) => setCatalogForm((f) => ({ ...f, maxQuantity: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Description
+            </label>
+            <textarea
+              rows={2}
+              className="input w-full resize-none"
+              placeholder="Short description shown on the Book Equipment card…"
+              value={catalogForm.description}
+              onChange={(e) => setCatalogForm((f) => ({ ...f, description: e.target.value }))}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Spec Tags <span className="text-slate-500 font-normal">(comma-separated)</span>
+            </label>
+            <input
+              type="text"
+              className="input w-full"
+              placeholder="e.g. HDMI, Portable, Backup Power"
+              value={catalogForm.tags}
+              onChange={(e) => setCatalogForm((f) => ({ ...f, tags: e.target.value }))}
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setCatalogModalOpen(false)}
+              className="btn-secondary flex-1"
+              disabled={catalogSaving}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary flex-1" disabled={catalogSaving}>
+              {catalogSaving ? <Spinner size="sm" /> : (catalogForm.id ? 'Save Changes' : 'Add Equipment')}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

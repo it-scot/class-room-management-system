@@ -57,6 +57,12 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.userId) || isAdmin();
     }
 
+    // ─── Equipment Catalog (Admin-managed inventory & quantities) ─────────
+    match /equipment_catalog/{itemId} {
+      allow read:  if isScotUser();
+      allow write: if isAdmin();
+    }
+
     // ─── Room Locks (Concurrency) ─────────────────────────────────────────
     match /room_locks/{lockId} {
       allow read, write: if isScotUser();

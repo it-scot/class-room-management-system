@@ -8,7 +8,8 @@ import Step3Details from '../components/booking/Step3Details';
 import Step4Confirm from '../components/booking/Step4Confirm';
 import GanttChartPage from '../pages/GanttChartPage';
 import BookEquipmentPage from '../pages/BookEquipmentPage';
-import { BUILDINGS, DEPARTMENTS, BOOKING_REASONS, SUPERVISOR_EMAILS, getRoomDetails } from '../utils/constants';
+import { BUILDINGS, DEPARTMENTS, BOOKING_REASONS, SUPERVISOR_EMAILS, EQUIPMENT_ITEMS, getRoomDetails } from '../utils/constants';
+import { format, addDays } from 'date-fns';
 import { downloadDailyBookingsPDF } from '../utils/pdfExport';
 import { downloadEquipmentExcelReport, downloadRoomExcelReport } from '../utils/excelExport';
 
@@ -19,12 +20,21 @@ vi.mock('../services/firebase', () => ({
   googleProvider: {},
 }));
 
+const mockAuthState = {
+  user: { uid: 'u1', email: 'disitha@scot.lk', displayName: 'Disitha' },
+  role: 'admin',
+  isAdmin: true,
+  loading: false,
+};
+
 // Mock AuthContext
 vi.mock('../store/AuthContext', () => ({
-  useAuth: () => ({
-    user: { uid: 'u1', email: 'disitha@scot.lk', displayName: 'Disitha' },
-    role: 'admin',
-    isAdmin: true,
+  useAuth: () => mockAuthState,
+}));
+
+vi.mock('../hooks/useEquipmentCatalog', () => ({
+  useEquipmentCatalog: () => ({
+    items: EQUIPMENT_ITEMS,
     loading: false,
   }),
 }));
@@ -66,20 +76,40 @@ vi.mock('../services/bookingService', () => ({
   }),
 }));
 
+const minEqDateTestStr = format(addDays(new Date(), 3), 'yyyy-MM-dd');
+
 vi.mock('../hooks/useEquipmentBookings', () => ({
   useAllEquipmentBookings: () => ({
     bookings: [
       {
         id: 'eq1',
+        userId: 'other-user',
+        userEmail: 'other@scot.lk',
         items: [{ id: 'generator', name: 'Generator', quantity: 1 }],
         itemsSummary: 'Generator (x1)',
-        date: '2026-12-05',
+        date: minEqDateTestStr,
         startTime: '09:00',
         endTime: '12:00',
-        location: 'Main Hall',
+        location: 'Building 1 - Board Room',
         department: 'Admin Department',
         reason: 'Exam Conduction',
         bookedFor: 'kasun@scot.lk',
+        supervisorEmail: 'duminda@scot.lk',
+        status: 'Approved',
+      },
+      {
+        id: 'eq2',
+        userId: 'u1',
+        userEmail: 'disitha@scot.lk',
+        items: [{ id: 'camera', name: 'Camera', quantity: 1 }],
+        itemsSummary: 'Camera (x1)',
+        date: '2026-12-10',
+        startTime: '10:00',
+        endTime: '11:00',
+        location: 'Building 2 - Library',
+        department: 'Marketing Department',
+        reason: 'Lecture Conduction',
+        bookedFor: 'disitha@scot.lk',
         supervisorEmail: 'duminda@scot.lk',
         status: 'Approved',
       },
@@ -338,8 +368,11 @@ describe('End-to-End Requirement Verification', () => {
       expect(screen.queryByRole('button', { name: /^Table$/i })).not.toBeInTheDocument();
     });
 
-    it('BookEquipmentPage renders summary analytics, equipment items, and 3-day policy', () => {
-      render(
+    it('BookEquipmentPage disables fully booked items on the same day with hover tooltip and scopes bookings for non-admins', () => {
+      // 1. Admin view sees all 2 bookings + Generator (max 1, booked 1 on minEqDate) is disabled with hover message
+      mockAuthState.isAdmin = true;
+      mockAuthState.role = 'admin';
+      const { unmount } = render(
         <MemoryRouter>
           <BookEquipmentPage />
         </MemoryRouter>
@@ -353,6 +386,32 @@ describe('End-to-End Requirement Verification', () => {
       expect(screen.getAllByText('Extension Cord').length).toBeGreaterThan(0);
       expect(screen.getAllByText('Camera').length).toBeGreaterThan(0);
       expect(screen.getAllByText('Tripod').length).toBeGreaterThan(0);
+
+      // Generator has maxQuantity 1 and 1 is already booked on minEqDate -> disabled + hover tooltip
+      expect(screen.getByText(/0\/1 left · Fully Booked/i)).toBeInTheDocument();
+      expect(screen.getByRole('tooltip')).toHaveTextContent(/Please try again on a different date/i);
+
+      // Admin sees all 2 equipment bookings
+      fireEvent.click(screen.getByRole('button', { name: /All Equipment Bookings/i }));
+      expect(screen.getByText(/Admin View · Showing all staff equipment bookings \(2\)/i)).toBeInTheDocument();
+      unmount();
+
+      // 2. Non-admin regular user sees ONLY their own 1 equipment booking
+      mockAuthState.isAdmin = false;
+      mockAuthState.role = 'user';
+      render(
+        <MemoryRouter>
+          <BookEquipmentPage />
+        </MemoryRouter>
+      );
+      fireEvent.click(screen.getByRole('button', { name: /All Equipment Bookings/i }));
+      expect(screen.getByText(/Showing your equipment bookings only \(1\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Building 2 - Library/i)).toBeInTheDocument();
+      expect(screen.queryByText(/Building 1 - Board Room/i)).not.toBeInTheDocument();
+
+      // Restore admin mock state
+      mockAuthState.isAdmin = true;
+      mockAuthState.role = 'admin';
     });
 
     it('PDF and Excel exporters run cleanly without errors', () => {

@@ -17,12 +17,12 @@ import {
   MagnifyingGlassIcon,
   SparklesIcon,
   BoltIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import { getEquipmentVisual, EquipmentChip } from '../components/booking/EquipmentIcons';
 
 import {
   BUILDINGS,
-  EQUIPMENT_ITEMS,
   TIME_SLOTS,
   DEPARTMENTS,
   BOOKING_REASONS,
@@ -38,6 +38,7 @@ import {
 import { validateDomain, validateEquipmentBooking } from '../utils/validators';
 import { useAuth } from '../store/AuthContext';
 import { useAllEquipmentBookings } from '../hooks/useEquipmentBookings';
+import { useEquipmentCatalog } from '../hooks/useEquipmentCatalog';
 import {
   createEquipmentBooking,
   updateEquipmentBookingStatus,
@@ -56,9 +57,19 @@ const STEPS = ['Select Equipment', 'Booking Details', 'Review & Confirm'];
 const ErrorMsg = ({ msg }) =>
   msg ? <p className="text-xs text-red-400 mt-1 animate-fade-in">{msg}</p> : null;
 
+const toDateInputStr = (dateObj) => {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 const BookEquipmentPage = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const canSeeAll = isAdmin || sessionStorage.getItem('scot_admin_auth') === 'true';
+
   const { bookings: allBookings, loading: bookingsLoading } = useAllEquipmentBookings();
+  const { items: catalogItems } = useEquipmentCatalog();
 
   const [activeTab, setActiveTab] = useState('book'); // 'book' | 'list'
   const [step, setStep] = useState(0);
@@ -74,22 +85,25 @@ const BookEquipmentPage = () => {
   const [toCancel, setToCancel] = useState(null);
   const [cancelling, setCancelling] = useState(false);
 
+  const minEqDate = useMemo(() => getMinEquipmentBookingDate(), []);
+  const minEqDateStr = useMemo(() => toDateInputStr(minEqDate), [minEqDate]);
+
   const categories = useMemo(
-    () => ['All', ...new Set(EQUIPMENT_ITEMS.map((i) => i.category))],
-    []
+    () => ['All', ...new Set(catalogItems.map((i) => i.category))],
+    [catalogItems]
   );
 
   const visibleCatalogItems = useMemo(
     () =>
       selectedCategory === 'All'
-        ? EQUIPMENT_ITEMS
-        : EQUIPMENT_ITEMS.filter((i) => i.category === selectedCategory),
-    [selectedCategory]
+        ? catalogItems
+        : catalogItems.filter((i) => i.category === selectedCategory),
+    [selectedCategory, catalogItems]
   );
 
   const [formData, setFormData] = useState({
     items: [], // [{ id, name, category, quantity }]
-    date: '',
+    date: minEqDateStr,
     startTime: '',
     endTime: '',
     locationOption: '',
@@ -107,11 +121,57 @@ const BookEquipmentPage = () => {
   const update = (fields) => setFormData(prev => ({ ...prev, ...fields }));
   const clearErr = (field) => setErrors(e => { const n = { ...e }; delete n[field]; return n; });
 
-  const minEqDate = useMemo(() => getMinEquipmentBookingDate(), []);
+  // Regular users only see their own equipment bookings; Admins see all bookings
+  const visibleBookings = useMemo(() => {
+    if (canSeeAll) return allBookings;
+    const myUid = user?.uid;
+    const myEmail = (user?.email || '').toLowerCase();
+    return allBookings.filter(
+      (b) =>
+        (myUid && b.userId === myUid) ||
+        (myEmail && (b.userEmail || '').toLowerCase() === myEmail)
+    );
+  }, [allBookings, canSeeAll, user]);
 
-  // ─── Equipment Booking Summary Analytics ───────────────────────────────────
+  // ─── Live Same-Day Availability Calculator (always across ALL users' active bookings) ──
+  const getAvailabilityForDate = (catalogItem, dateStr = formData.date) => {
+    const totalQty = Math.max(1, Number(catalogItem?.maxQuantity || 1));
+    if (!dateStr || !catalogItem) {
+      return { totalQty, usedQty: 0, remainingQty: totalQty, isFullyBooked: false };
+    }
+    const targetId = (catalogItem.id || '').toLowerCase();
+    const targetName = (catalogItem.name || '').toLowerCase();
+
+    let usedQty = 0;
+    allBookings.forEach((b) => {
+      if (
+        b.date !== dateStr ||
+        b.status === BOOKING_STATUS.REJECTED ||
+        b.status === BOOKING_STATUS.CANCELLED
+      ) {
+        return;
+      }
+      (b.items || []).forEach((it) => {
+        const itId = (it.id || '').toLowerCase();
+        const itName = (it.name || '').toLowerCase();
+        if ((targetId && itId === targetId) || (targetName && itName === targetName)) {
+          usedQty += Number(it.quantity || 1);
+        }
+      });
+    });
+
+    const remainingQty = Math.max(0, totalQty - usedQty);
+    return {
+      totalQty,
+      usedQty,
+      remainingQty,
+      isFullyBooked: remainingQty <= 0,
+    };
+  };
+
+  // ─── Equipment Booking Summary Analytics (scoped to user unless Admin) ─────
   const summary = useMemo(() => {
-    const active = allBookings.filter(
+    const active = visibleBookings.filter(
       b => b.status !== BOOKING_STATUS.REJECTED && b.status !== BOOKING_STATUS.CANCELLED
     );
     const today = todayStr();
@@ -119,7 +179,7 @@ const BookEquipmentPage = () => {
 
     let totalUnits = 0;
     const byItem = {};
-    EQUIPMENT_ITEMS.forEach(item => {
+    catalogItems.forEach(item => {
       byItem[item.name] = { bookings: 0, units: 0 };
     });
 
@@ -144,29 +204,39 @@ const BookEquipmentPage = () => {
       topItem: sortedItems.length > 0 ? sortedItems[0][0] : 'None yet',
       breakdown: Object.entries(byItem),
     };
-  }, [allBookings]);
+  }, [visibleBookings, catalogItems]);
 
   // ─── Item Selection Helpers ────────────────────────────────────────────────
   const toggleItem = (catalogItem) => {
     const exists = formData.items.find(i => i.id === catalogItem.id);
     if (exists) {
       update({ items: formData.items.filter(i => i.id !== catalogItem.id) });
-    } else {
-      update({
-        items: [
-          ...formData.items,
-          { id: catalogItem.id, name: catalogItem.name, category: catalogItem.category, quantity: 1 },
-        ],
-      });
+      clearErr('items');
+      return;
     }
+
+    const { totalQty, isFullyBooked } = getAvailabilityForDate(catalogItem, formData.date);
+    if (isFullyBooked) {
+      toast.error(
+        `This item cannot be booked on ${formatDate(formData.date)} because we only have ${totalQty} unit${totalQty === 1 ? '' : 's'} and all are already in use. Please try a different date.`
+      );
+      return;
+    }
+
+    update({
+      items: [
+        ...formData.items,
+        { id: catalogItem.id, name: catalogItem.name, category: catalogItem.category, quantity: 1 },
+      ],
+    });
     clearErr('items');
   };
 
-  const changeItemQty = (itemId, delta, maxQty) => {
+  const changeItemQty = (itemId, delta, maxAvailableQty) => {
     update({
       items: formData.items.map(i =>
         i.id === itemId
-          ? { ...i, quantity: Math.max(1, Math.min(maxQty, (i.quantity || 1) + delta)) }
+          ? { ...i, quantity: Math.max(1, Math.min(maxAvailableQty, (i.quantity || 1) + delta)) }
           : i
       ),
     });
@@ -197,10 +267,35 @@ const BookEquipmentPage = () => {
 
   const handleDateChange = (date) => {
     if (!date) return;
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    update({ date: `${y}-${m}-${d}` });
+    const nextDateStr = toDateInputStr(date);
+
+    // Re-check currently selected items against stock availability on the new date
+    const removedNames = [];
+    const adjustedItems = [];
+    formData.items.forEach((selected) => {
+      const catalogMatch = catalogItems.find((c) => c.id === selected.id || c.name === selected.name);
+      if (!catalogMatch) {
+        adjustedItems.push(selected);
+        return;
+      }
+      const { remainingQty } = getAvailabilityForDate(catalogMatch, nextDateStr);
+      if (remainingQty <= 0) {
+        removedNames.push(selected.name);
+      } else {
+        adjustedItems.push({
+          ...selected,
+          quantity: Math.min(selected.quantity || 1, remainingQty),
+        });
+      }
+    });
+
+    if (removedNames.length > 0) {
+      toast.error(
+        `${removedNames.join(', ')} ${removedNames.length > 1 ? 'are' : 'is'} fully booked on ${formatDate(nextDateStr)} and removed from selection.`
+      );
+    }
+
+    update({ date: nextDateStr, items: adjustedItems });
     clearErr('date');
   };
 
@@ -246,6 +341,21 @@ const BookEquipmentPage = () => {
   };
 
   const handleSubmit = async () => {
+    // Re-verify real-time same-day stock availability before saving
+    for (const sel of formData.items) {
+      const catalogMatch = catalogItems.find((c) => c.id === sel.id || c.name === sel.name);
+      if (catalogMatch) {
+        const { totalQty, remainingQty } = getAvailabilityForDate(catalogMatch, formData.date);
+        if (Number(sel.quantity || 1) > remainingQty) {
+          toast.error(
+            `${sel.name} cannot be booked on ${formatDate(formData.date)} — only ${remainingQty} of ${totalQty} unit(s) remaining. Please choose another date.`
+          );
+          setStep(0);
+          return;
+        }
+      }
+    }
+
     setSubmitting(true);
     try {
       const resolvedReason =
@@ -284,7 +394,7 @@ const BookEquipmentPage = () => {
       toast.success('✅ Equipment booked successfully! Calendar invitation sent.');
       setFormData({
         items: [],
-        date: '',
+        date: minEqDateStr,
         startTime: '',
         endTime: '',
         locationOption: '',
@@ -327,7 +437,7 @@ const BookEquipmentPage = () => {
   };
 
   const filteredList = useMemo(() => {
-    return allBookings.filter(b => {
+    return visibleBookings.filter(b => {
       if (filterItem !== 'All') {
         const hasMatch = (b.items || []).some(i => i.name === filterItem);
         if (!hasMatch) return false;
@@ -345,7 +455,7 @@ const BookEquipmentPage = () => {
       }
       return true;
     });
-  }, [allBookings, filterItem, search]);
+  }, [visibleBookings, filterItem, search]);
 
   return (
     <div className="page-wrap space-y-6 sm:space-y-8 animate-fade-in">
@@ -381,7 +491,7 @@ const BookEquipmentPage = () => {
           >
             All Equipment Bookings
             <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-white/15">
-              {allBookings.length}
+              {visibleBookings.length}
             </span>
           </button>
         </div>
@@ -491,12 +601,43 @@ const BookEquipmentPage = () => {
                   <div>
                     <h2 className="text-xl font-bold text-white mb-1">Select Equipment</h2>
                     <p className="text-sm text-slate-400">
-                      Choose one or more hardware items and adjust quantities needed.
+                      Pick your booking date first to see live stock availability, then select hardware items.
                     </p>
                   </div>
                   <span className="text-[11px] font-medium text-slate-400 bg-white/[0.04] border border-white/[0.08] px-3 py-1 rounded-lg self-start sm:self-auto">
-                    {EQUIPMENT_ITEMS.length} catalog items
+                    {catalogItems.length} catalog items
                   </span>
+                </div>
+
+                {/* Date Picker on Step 0 so live same-day stock availability updates immediately */}
+                <div className="rounded-2xl bg-[#0e1529]/90 border border-white/[0.08] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-amber-400/[0.12] ring-1 ring-amber-400/25 flex items-center justify-center shrink-0 mt-0.5">
+                      <CalendarDaysIcon className="w-4 h-4 text-amber-300" />
+                    </div>
+                    <div>
+                      <label htmlFor="eq-step0-date" className="text-xs font-bold text-white block">
+                        Check Availability for Date *
+                      </label>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Minimum 3 days advance · Showing live remaining units for{' '}
+                        <span className="text-primary-300 font-semibold">{formatDate(formData.date)}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="sm:w-52 shrink-0">
+                    <DatePicker
+                      id="eq-step0-date"
+                      selected={selectedDateObj}
+                      onChange={handleDateChange}
+                      minDate={minEqDate}
+                      dateFormat="dd/MM/yyyy"
+                      placeholderText="Select date…"
+                      className="input"
+                      calendarClassName="dark-calendar"
+                      wrapperClassName="w-full"
+                    />
+                  </div>
                 </div>
 
                 {/* Category Filter Pills */}
@@ -560,45 +701,95 @@ const BookEquipmentPage = () => {
                   {visibleCatalogItems.map(item => {
                     const selectedItem = formData.items.find(i => i.id === item.id);
                     const isSelected = !!selectedItem;
-                    const { Icon, wellClass, dotClass } = getEquipmentVisual(item.id);
+                    const { Icon, wellClass, dotClass } = getEquipmentVisual(item.id || item.name);
+                    const { totalQty, remainingQty, isFullyBooked } = getAvailabilityForDate(item, formData.date);
+
+                    const unavailableMsg = `This item cannot be booked on ${formatDate(formData.date)} because we already have only ${totalQty} unit${totalQty === 1 ? '' : 's'} and all ${totalQty} are in use on the same day. Please try again on a different date.`;
 
                     return (
                       <div
                         key={item.id}
                         onClick={() => toggleItem(item)}
                         role="button"
-                        tabIndex={0}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleItem(item); } }}
-                        className={`group p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer flex flex-col gap-3 active:scale-[0.99] ${
-                          isSelected
-                            ? 'border-primary-500/80 bg-primary-500/[0.11] shadow-lg shadow-primary-500/15'
-                            : 'border-white/[0.08] bg-[#0e1529]/70 hover:border-white/20 hover:bg-[#121b33]/90'
+                        tabIndex={isFullyBooked ? -1 : 0}
+                        aria-disabled={isFullyBooked}
+                        title={isFullyBooked ? unavailableMsg : `${item.name} — ${remainingQty} of ${totalQty} available`}
+                        onKeyDown={e => {
+                          if (!isFullyBooked && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault();
+                            toggleItem(item);
+                          }
+                        }}
+                        className={`group relative p-4 rounded-2xl border text-left transition-all duration-200 flex flex-col gap-3 ${
+                          isFullyBooked
+                            ? 'border-red-500/25 bg-[#0b1020]/70 opacity-65 cursor-not-allowed'
+                            : isSelected
+                            ? 'border-primary-500/80 bg-primary-500/[0.11] shadow-lg shadow-primary-500/15 cursor-pointer active:scale-[0.99]'
+                            : 'border-white/[0.08] bg-[#0e1529]/70 hover:border-white/20 hover:bg-[#121b33]/90 cursor-pointer active:scale-[0.99]'
                         }`}
                       >
+                        {/* Custom Hover Tooltip when all units are booked on the selected date */}
+                        {isFullyBooked && (
+                          <div
+                            role="tooltip"
+                            className="pointer-events-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full z-30 w-64 rounded-xl bg-[#0b1120] border border-red-400/40 p-3 shadow-2xl text-[11px] leading-relaxed text-red-100"
+                          >
+                            <div className="flex items-start gap-2">
+                              <ExclamationTriangleIcon className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                              <span>{unavailableMsg}</span>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex items-start justify-between gap-2.5">
                           <div className="flex items-start gap-3 min-w-0">
                             <div
-                              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105 ${wellClass}`}
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 ${
+                                isFullyBooked
+                                  ? 'bg-white/5 text-slate-500 ring-1 ring-white/10'
+                                  : `group-hover:scale-105 ${wellClass}`
+                              }`}
                             >
-                              <Icon active className="w-5 h-5" />
+                              <Icon active={!isFullyBooked} className="w-5 h-5" />
                             </div>
                             <div className="min-w-0">
-                              <p className={`text-sm font-bold truncate ${isSelected ? 'text-white' : 'text-slate-100'}`}>
+                              <p className={`text-sm font-bold truncate ${isFullyBooked ? 'text-slate-400' : isSelected ? 'text-white' : 'text-slate-100'}`}>
                                 {item.name}
                               </p>
-                              <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] px-2 py-0.5 text-[10px] font-medium text-slate-300">
-                                <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
-                                <span>{item.category} · Max {item.maxQuantity}</span>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] px-2 py-0.5 text-[10px] font-medium text-slate-300">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${isFullyBooked ? 'bg-slate-500' : dotClass}`} />
+                                  <span>{item.category}</span>
+                                </span>
+                                {isFullyBooked ? (
+                                  <span className="inline-flex items-center gap-1 rounded-lg bg-red-500/15 border border-red-400/30 px-2 py-0.5 text-[10px] font-bold text-red-300">
+                                    0/{totalQty} left · Fully Booked
+                                  </span>
+                                ) : remainingQty < totalQty ? (
+                                  <span className="inline-flex items-center gap-1 rounded-lg bg-amber-500/15 border border-amber-400/30 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                                    {remainingQty}/{totalQty} left
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 border border-emerald-400/25 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                                    {totalQty} available
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
 
                           <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${
-                            isSelected
+                            isFullyBooked
+                              ? 'border-red-500/30 bg-red-500/10'
+                              : isSelected
                               ? 'bg-primary-500 border-primary-500 shadow-sm shadow-primary-500/50'
                               : 'border-white/20 group-hover:border-white/35'
                           }`}>
-                            {isSelected && <span className="text-white text-xs font-bold leading-none">✓</span>}
+                            {isFullyBooked ? (
+                              <span className="text-red-400 text-[10px] font-bold leading-none">×</span>
+                            ) : isSelected ? (
+                              <span className="text-white text-xs font-bold leading-none">✓</span>
+                            ) : null}
                           </div>
                         </div>
 
@@ -608,25 +799,25 @@ const BookEquipmentPage = () => {
 
                         <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-white/[0.07]">
                           <div className="flex flex-wrap gap-1.5">
-                            {item.tags.map(tag => (
+                            {(item.tags || []).map(tag => (
                               <span
                                 key={tag}
                                 className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#0a1020]/90 px-2 py-1 text-[10px] font-medium text-slate-300 tracking-tight"
                               >
-                                <span className={`w-1 h-1 rounded-full ${dotClass}`} />
+                                <span className={`w-1 h-1 rounded-full ${isFullyBooked ? 'bg-slate-600' : dotClass}`} />
                                 {tag}
                               </span>
                             ))}
                           </div>
 
-                          {isSelected && item.maxQuantity > 1 && (
+                          {!isFullyBooked && isSelected && remainingQty > 1 && (
                             <div
                               className="flex items-center gap-1 bg-[#0a1020] border border-primary-500/40 rounded-xl px-1.5 py-0.5 shrink-0"
                               onClick={e => e.stopPropagation()}
                             >
                               <button
                                 type="button"
-                                onClick={() => changeItemQty(item.id, -1, item.maxQuantity)}
+                                onClick={() => changeItemQty(item.id, -1, remainingQty)}
                                 className="w-6 h-6 rounded-lg text-slate-300 hover:bg-white/10 font-bold text-sm"
                               >
                                 -
@@ -636,8 +827,9 @@ const BookEquipmentPage = () => {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => changeItemQty(item.id, 1, item.maxQuantity)}
-                                className="w-6 h-6 rounded-lg text-slate-300 hover:bg-white/10 font-bold text-sm"
+                                disabled={selectedItem.quantity >= remainingQty}
+                                onClick={() => changeItemQty(item.id, 1, remainingQty)}
+                                className="w-6 h-6 rounded-lg text-slate-300 hover:bg-white/10 disabled:opacity-35 font-bold text-sm"
                               >
                                 +
                               </button>
@@ -988,9 +1180,18 @@ const BookEquipmentPage = () => {
         </div>
       )}
 
-      {/* TAB 2: ALL EQUIPMENT BOOKINGS LIST */}
+      {/* TAB 2: ALL EQUIPMENT BOOKINGS LIST (User's own only; Admin sees all) */}
       {activeTab === 'list' && (
         <div className="space-y-4 animate-fade-in">
+          {/* Scope Notice */}
+          <div className="flex items-center justify-between gap-2 px-1">
+            <p className="text-xs text-slate-400">
+              {canSeeAll
+                ? `Admin View · Showing all staff equipment bookings (${visibleBookings.length})`
+                : `Showing your equipment bookings only (${visibleBookings.length})`}
+            </p>
+          </div>
+
           {/* Filters */}
           <div className="glass-dark p-4 flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
@@ -1009,7 +1210,7 @@ const BookEquipmentPage = () => {
               onChange={e => setFilterItem(e.target.value)}
             >
               <option value="All">All Equipment Types</option>
-              {EQUIPMENT_ITEMS.map(item => (
+              {catalogItems.map(item => (
                 <option key={item.id} value={item.name}>{item.name}</option>
               ))}
             </select>
