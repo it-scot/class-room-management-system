@@ -13,11 +13,12 @@ import {
   MapPinIcon,
   EnvelopeIcon,
   CubeIcon,
-  CheckCircleIcon,
   TrashIcon,
   MagnifyingGlassIcon,
-  ChartBarIcon,
+  SparklesIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
+import { getEquipmentVisual, EquipmentChip } from '../components/booking/EquipmentIcons';
 
 import {
   EQUIPMENT_ITEMS,
@@ -65,11 +66,25 @@ const BookEquipmentPage = () => {
   const [newEmail, setNewEmail] = useState('');
   const [emailInputError, setEmailInputError] = useState('');
 
-  // Filters for Equipment Bookings List tab
+  // Filters for Equipment Catalog & Bookings List tab
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [filterItem, setFilterItem] = useState('All');
   const [toCancel, setToCancel] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+
+  const categories = useMemo(
+    () => ['All', ...new Set(EQUIPMENT_ITEMS.map((i) => i.category))],
+    []
+  );
+
+  const visibleCatalogItems = useMemo(
+    () =>
+      selectedCategory === 'All'
+        ? EQUIPMENT_ITEMS
+        : EQUIPMENT_ITEMS.filter((i) => i.category === selectedCategory),
+    [selectedCategory]
+  );
 
   const [formData, setFormData] = useState({
     items: [], // [{ id, name, category, quantity }]
@@ -371,44 +386,71 @@ const BookEquipmentPage = () => {
       <div className="space-y-4">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {[
-            { label: 'Active Equipment Bookings', value: summary.totalActive, color: 'text-primary-400', bg: 'bg-primary-500/10' },
-            { label: 'Upcoming Bookings',         value: summary.upcomingCount, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-            { label: 'Total Units Reserved',      value: summary.totalUnits, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-            { label: 'Most Booked Item',          value: summary.topItem, color: 'text-accent-400', bg: 'bg-accent-500/10', isText: true },
-          ].map(card => (
-            <div key={card.label} className="glass p-3.5 sm:p-4">
-              <div className={`w-8 h-8 rounded-xl ${card.bg} flex items-center justify-center mb-2`}>
-                <ChartBarIcon className={`w-4 h-4 ${card.color}`} />
+            {
+              label: 'Active Equipment Bookings',
+              value: summary.totalActive,
+              color: 'text-indigo-300',
+              well: 'bg-indigo-400/[0.12] text-indigo-300 ring-1 ring-indigo-400/25',
+              Icon: CubeIcon,
+            },
+            {
+              label: 'Upcoming Bookings',
+              value: summary.upcomingCount,
+              color: 'text-emerald-300',
+              well: 'bg-emerald-400/[0.12] text-emerald-300 ring-1 ring-emerald-400/25',
+              Icon: CalendarDaysIcon,
+            },
+            {
+              label: 'Total Units Reserved',
+              value: summary.totalUnits,
+              color: 'text-amber-300',
+              well: 'bg-amber-400/[0.12] text-amber-300 ring-1 ring-amber-400/25',
+              Icon: BoltIcon,
+            },
+            {
+              label: 'Most Booked Item',
+              value: summary.topItem,
+              color: 'text-sky-300',
+              well: 'bg-sky-400/[0.12] text-sky-300 ring-1 ring-sky-400/25',
+              Icon: SparklesIcon,
+              isText: true,
+            },
+          ].map(({ label, value, color, well, Icon, isText }) => (
+            <div
+              key={label}
+              className="rounded-2xl bg-[#0e1529]/90 border border-white/[0.08] p-4 shadow-inner hover:border-white/[0.15] transition-all duration-200"
+            >
+              <div className={`w-9 h-9 rounded-xl ${well} flex items-center justify-center mb-3`}>
+                <Icon className="w-4 h-4" />
               </div>
-              <p className={`${card.isText ? 'text-base sm:text-lg truncate' : 'text-xl sm:text-2xl'} font-bold ${card.color}`}>
-                {bookingsLoading ? '—' : card.value}
+              <p className={`${isText ? 'text-base sm:text-lg truncate' : 'text-xl sm:text-2xl'} font-extrabold ${color} tracking-tight`}>
+                {bookingsLoading ? '—' : value}
               </p>
-              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5">{card.label}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5 font-medium">{label}</p>
             </div>
           ))}
         </div>
 
-        {/* Equipment Item Breakdown Summary Strip */}
-        <div className="glass-dark p-4 rounded-2xl">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-            <CubeIcon className="w-4 h-4 text-primary-400" />
-            Equipment Usage Summary (Active Bookings)
-          </p>
+        {/* Equipment Item Breakdown Summary Strip (Matching RoomFacilityTags tactile chips) */}
+        <div className="rounded-2xl bg-[#0e1529]/90 border border-white/[0.08] p-4 shadow-inner">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <CubeIcon className="w-4 h-4 text-primary-400" />
+              Equipment Usage Summary (Active Bookings)
+            </p>
+            <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+              Live hardware allocation
+            </span>
+          </div>
           <div className="flex flex-wrap gap-2">
             {summary.breakdown.map(([name, info]) => (
-              <div
+              <EquipmentChip
                 key={name}
-                className={`px-3 py-1.5 rounded-xl border text-xs flex items-center gap-2 ${
-                  info.bookings > 0
-                    ? 'bg-primary-500/15 border-primary-500/30 text-primary-200'
-                    : 'bg-white/[0.03] border-white/8 text-slate-400'
-                }`}
-              >
-                <span className="font-semibold">{name}</span>
-                <span className="px-1.5 py-0.5 rounded-md bg-black/30 text-[10px] font-bold">
-                  {info.bookings} req · {info.units} qty
-                </span>
-              </div>
+                name={name}
+                active={info.bookings > 0}
+                selected={info.bookings > 0}
+                meta={`${info.bookings} req · ${info.units} qty`}
+              />
             ))}
           </div>
         </div>
@@ -416,7 +458,7 @@ const BookEquipmentPage = () => {
 
       {/* TAB 1: NEW EQUIPMENT BOOKING WIZARD */}
       {activeTab === 'book' && (
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           {/* Progress Steps */}
           <div className="flex items-center mb-6 sm:mb-8">
             {STEPS.map((label, i) => (
@@ -440,28 +482,80 @@ const BookEquipmentPage = () => {
             {/* STEP 0: Select Equipment */}
             {step === 0 && (
               <div className="space-y-6 animate-fade-in">
-                <div>
-                  <h2 className="text-xl font-bold text-white mb-1">Select Equipment</h2>
-                  <p className="text-sm text-slate-400">
-                    Choose one or more equipment items and specify quantities needed.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-bold text-white mb-1">Select Equipment</h2>
+                    <p className="text-sm text-slate-400">
+                      Choose one or more hardware items and adjust quantities needed.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-400 bg-white/[0.04] border border-white/[0.08] px-3 py-1 rounded-lg self-start sm:self-auto">
+                    {EQUIPMENT_ITEMS.length} catalog items
+                  </span>
                 </div>
 
+                {/* Category Filter Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                  {categories.map((cat) => {
+                    const active = selectedCategory === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all whitespace-nowrap ${
+                          active
+                            ? 'bg-primary-600 text-white border-primary-400/50 shadow-sm shadow-primary-500/20'
+                            : 'bg-[#0d1324]/80 text-slate-400 border-white/[0.08] hover:text-slate-200 hover:border-white/20'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Selected Gear Tray */}
                 {formData.items.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2 bg-primary-500/10 border border-primary-500/30 rounded-xl px-4 py-2.5">
-                    <span className="w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                      {formData.items.length}
-                    </span>
-                    <span className="text-xs sm:text-sm text-primary-200 font-medium">
-                      {formData.items.map(i => `${i.name} (x${i.quantity})`).join(', ')}
-                    </span>
+                  <div className="rounded-2xl bg-[#0e1529]/95 border border-primary-500/30 p-3.5 space-y-2.5 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-primary-300 flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center text-white text-[11px] font-bold">
+                          {formData.items.length}
+                        </span>
+                        Selected Equipment
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => update({ items: [] })}
+                        className="text-[11px] text-slate-400 hover:text-red-300 font-medium transition-colors"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {formData.items.map((item) => (
+                        <EquipmentChip
+                          key={item.id}
+                          id={item.id}
+                          name={item.name}
+                          quantity={item.quantity}
+                          selected
+                          onRemove={() =>
+                            update({ items: formData.items.filter((i) => i.id !== item.id) })
+                          }
+                        />
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                <div className="grid sm:grid-cols-2 gap-3.5">
-                  {EQUIPMENT_ITEMS.map(item => {
+                {/* Sculpted Hardware Equipment Cards */}
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {visibleCatalogItems.map(item => {
                     const selectedItem = formData.items.find(i => i.id === item.id);
                     const isSelected = !!selectedItem;
+                    const { Icon, wellClass, dotClass } = getEquipmentVisual(item.id);
 
                     return (
                       <div
@@ -470,40 +564,51 @@ const BookEquipmentPage = () => {
                         role="button"
                         tabIndex={0}
                         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleItem(item); } }}
-                        className={`p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer flex flex-col gap-3 ${
+                        className={`group p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer flex flex-col gap-3 active:scale-[0.99] ${
                           isSelected
-                            ? 'border-primary-500 bg-primary-500/15 shadow-lg shadow-primary-500/15'
-                            : 'border-white/10 bg-white/[0.04] hover:border-white/25 hover:bg-white/[0.07]'
+                            ? 'border-primary-500/80 bg-primary-500/[0.11] shadow-lg shadow-primary-500/15'
+                            : 'border-white/[0.08] bg-[#0e1529]/70 hover:border-white/20 hover:bg-[#121b33]/90'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-3">
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${isSelected ? 'bg-primary-500/30' : 'bg-white/8'}`}>
-                              <WrenchScrewdriverIcon className={`w-5 h-5 ${isSelected ? 'text-primary-300' : 'text-slate-400'}`} />
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105 ${wellClass}`}
+                            >
+                              <Icon active className="w-5 h-5" />
                             </div>
-                            <div>
-                              <p className={`text-sm font-bold ${isSelected ? 'text-white' : 'text-slate-200'}`}>
+                            <div className="min-w-0">
+                              <p className={`text-sm font-bold truncate ${isSelected ? 'text-white' : 'text-slate-100'}`}>
                                 {item.name}
                               </p>
-                              <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/10 text-slate-300">
-                                {item.category} · Max {item.maxQuantity}
-                              </span>
+                              <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] px-2 py-0.5 text-[10px] font-medium text-slate-300">
+                                <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                                <span>{item.category} · Max {item.maxQuantity}</span>
+                              </div>
                             </div>
                           </div>
 
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                            isSelected ? 'bg-primary-500 border-primary-500' : 'border-white/20'
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                            isSelected
+                              ? 'bg-primary-500 border-primary-500 shadow-sm shadow-primary-500/50'
+                              : 'border-white/20 group-hover:border-white/35'
                           }`}>
                             {isSelected && <span className="text-white text-xs font-bold leading-none">✓</span>}
                           </div>
                         </div>
 
-                        <p className="text-xs text-slate-400 leading-relaxed">{item.description}</p>
+                        <p className="text-xs text-slate-400 leading-relaxed flex-1">
+                          {item.description}
+                        </p>
 
-                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/8">
+                        <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-white/[0.07]">
                           <div className="flex flex-wrap gap-1.5">
                             {item.tags.map(tag => (
-                              <span key={tag} className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-sky-500/15 text-sky-300 border border-sky-500/20">
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#0a1020]/90 px-2 py-1 text-[10px] font-medium text-slate-300 tracking-tight"
+                              >
+                                <span className={`w-1 h-1 rounded-full ${dotClass}`} />
                                 {tag}
                               </span>
                             ))}
@@ -511,23 +616,23 @@ const BookEquipmentPage = () => {
 
                           {isSelected && item.maxQuantity > 1 && (
                             <div
-                              className="flex items-center gap-1.5 bg-surface-900/90 border border-primary-500/30 rounded-lg px-1.5 py-0.5"
+                              className="flex items-center gap-1 bg-[#0a1020] border border-primary-500/40 rounded-xl px-1.5 py-0.5 shrink-0"
                               onClick={e => e.stopPropagation()}
                             >
                               <button
                                 type="button"
                                 onClick={() => changeItemQty(item.id, -1, item.maxQuantity)}
-                                className="w-6 h-6 rounded text-slate-300 hover:bg-white/10 font-bold text-sm"
+                                className="w-6 h-6 rounded-lg text-slate-300 hover:bg-white/10 font-bold text-sm"
                               >
                                 -
                               </button>
-                              <span className="text-xs font-bold text-white min-w-[18px] text-center">
+                              <span className="text-xs font-bold text-white min-w-[18px] text-center font-mono">
                                 {selectedItem.quantity}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => changeItemQty(item.id, 1, item.maxQuantity)}
-                                className="w-6 h-6 rounded text-slate-300 hover:bg-white/10 font-bold text-sm"
+                                className="w-6 h-6 rounded-lg text-slate-300 hover:bg-white/10 font-bold text-sm"
                               >
                                 +
                               </button>
@@ -557,10 +662,24 @@ const BookEquipmentPage = () => {
             {/* STEP 1: Equipment Booking Details */}
             {step === 1 && (
               <div className="space-y-5 animate-fade-in">
-                <div>
-                  <p className="text-xs text-primary-400 font-semibold uppercase tracking-wider mb-1">
-                    {formData.items.map(i => `${i.name} (x${i.quantity})`).join(', ')}
+                <div className="rounded-2xl bg-[#0e1529]/90 border border-white/10 p-4 space-y-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Selected Hardware ({formData.items.length})
                   </p>
+                  <div className="flex flex-wrap gap-2">
+                    {formData.items.map((item) => (
+                      <EquipmentChip
+                        key={item.id}
+                        id={item.id}
+                        name={item.name}
+                        quantity={item.quantity}
+                        selected
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
                   <h2 className="text-xl font-bold text-white mb-1">Equipment Booking Details</h2>
                   <p className="text-sm text-slate-400">
                     Provide date, time, venue, and recipient information.
@@ -568,8 +687,10 @@ const BookEquipmentPage = () => {
                 </div>
 
                 {/* 3-Day Advance Rule Notice */}
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 text-xs sm:text-sm text-amber-200 flex items-center gap-2.5">
-                  <CalendarDaysIcon className="w-5 h-5 text-amber-400 shrink-0" />
+                <div className="bg-amber-500/[0.09] border border-amber-400/25 rounded-2xl p-3.5 text-xs sm:text-sm text-amber-200 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-amber-400/15 ring-1 ring-amber-400/25 flex items-center justify-center shrink-0">
+                    <CalendarDaysIcon className="w-4 h-4 text-amber-300" />
+                  </div>
                   <span>
                     Equipment must be booked at least <strong>3 days in advance</strong>. Earliest selectable date:{' '}
                     <strong>{formatDate(minEqDate)}</strong>.
@@ -780,14 +901,18 @@ const BookEquipmentPage = () => {
                   <p className="text-sm text-slate-400">Confirm the equipment items and booking details below.</p>
                 </div>
 
-                <div className="bg-surface-800 rounded-2xl p-5 border border-white/8 space-y-2.5 text-sm">
-                  <div className="flex justify-between gap-4 pb-2.5 border-b border-white/6">
-                    <span className="text-xs text-slate-500">Equipment Items</span>
-                    <div className="flex flex-wrap justify-end gap-1.5">
+                <div className="bg-[#0e1529]/90 rounded-2xl p-5 border border-white/[0.08] space-y-2.5 text-sm">
+                  <div className="flex flex-col sm:flex-row sm:justify-between gap-2.5 pb-3 border-b border-white/[0.07]">
+                    <span className="text-xs text-slate-400 font-medium">Equipment Items</span>
+                    <div className="flex flex-wrap sm:justify-end gap-2">
                       {formData.items.map(i => (
-                        <span key={i.id} className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary-500/20 text-primary-300 border border-primary-500/30">
-                          {i.name} × {i.quantity}
-                        </span>
+                        <EquipmentChip
+                          key={i.id}
+                          id={i.id}
+                          name={i.name}
+                          quantity={i.quantity}
+                          selected
+                        />
                       ))}
                     </div>
                   </div>
@@ -865,17 +990,17 @@ const BookEquipmentPage = () => {
                 const isOwner = user && b.userId === user.uid;
                 const canCancel = isOwner && (b.status === BOOKING_STATUS.APPROVED || b.status === BOOKING_STATUS.PENDING);
                 return (
-                  <div key={b.id} className="glass p-5 flex flex-col gap-3">
+                  <div key={b.id} className="rounded-2xl bg-[#0e1529]/90 border border-white/[0.08] hover:border-white/[0.15] transition-all p-5 flex flex-col gap-3.5 shadow-inner">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-2">
                         {(b.items || []).map((item, idx) => (
-                          <span
+                          <EquipmentChip
                             key={`${b.id}-${idx}`}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-primary-500/20 text-primary-200 border border-primary-500/30"
-                          >
-                            <CheckCircleIcon className="w-3.5 h-3.5 text-primary-400" />
-                            {item.name} ×{item.quantity || 1}
-                          </span>
+                            id={item.id}
+                            name={item.name}
+                            quantity={item.quantity || 1}
+                            selected
+                          />
                         ))}
                       </div>
                       <Badge status={b.status} />

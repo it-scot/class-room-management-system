@@ -302,6 +302,18 @@
   0%, 100% { transform: translateX(0); }
   50%      { transform: translateX(1.5px); }
 }
+@keyframes sound-wave {
+  0%, 100% { opacity: 0.2; transform: scale(0.95); }
+  50%      { opacity: 1; transform: scale(1.04); }
+}
+@keyframes rec-blink {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+@keyframes board-stroke {
+  0%, 100% { stroke-dashoffset: 10; opacity: 0.45; }
+  50%      { stroke-dashoffset: 0; opacity: 1; }
+}
 
 .icon-screen-scan {
   animation: screen-scan 2.8s ease-in-out infinite;
@@ -326,6 +338,21 @@
 .icon-seat-expand {
   animation: seat-expand 2.2s ease-in-out infinite;
 }
+.icon-sound-wave-1 {
+  transform-origin: left center;
+  animation: sound-wave 2s ease-in-out infinite 0s;
+}
+.icon-sound-wave-2 {
+  transform-origin: left center;
+  animation: sound-wave 2s ease-in-out infinite 0.35s;
+}
+.icon-rec-blink {
+  animation: rec-blink 1.9s ease-in-out infinite;
+}
+.icon-board-stroke {
+  stroke-dasharray: 10;
+  animation: board-stroke 2.8s ease-in-out infinite;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .icon-screen-scan,
@@ -334,7 +361,11 @@
   .icon-cast-wave-2,
   .icon-cast-wave-3,
   .icon-power-spark,
-  .icon-seat-expand {
+  .icon-seat-expand,
+  .icon-sound-wave-1,
+  .icon-sound-wave-2,
+  .icon-rec-blink,
+  .icon-board-stroke {
     animation: none;
   }
 }
