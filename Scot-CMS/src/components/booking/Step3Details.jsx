@@ -21,15 +21,11 @@ import {
 import { validateDomain } from '../../utils/validators';
 import { useAuth } from '../../store/AuthContext';
 import {
-  ComputerDesktopIcon,
-  VideoCameraIcon,
-  BoltIcon,
-  SignalIcon,
-  UsersIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
   EnvelopeIcon,
 } from '@heroicons/react/24/outline';
+import RoomFacilityTags, { RoomCapacityBadge } from './RoomFacilityTags';
 
 const ErrorMsg = ({ msg }) =>
   msg ? <p className="text-xs text-red-400 mt-1 animate-fade-in">{msg}</p> : null;
@@ -230,72 +226,31 @@ const Step3Details = ({ formData, update, errors, setErrors, onNext, onBack }) =
 
       {/* Built-in Classroom Generic Requirements / Facilities Box */}
       {selectedRoomInfos.length > 0 && (
-        <div className="rounded-2xl bg-gradient-to-br from-primary-500/10 via-surface-800/90 to-accent-500/10 border border-primary-500/25 p-4 space-y-3 animate-fade-in">
-          <div className="flex items-center gap-2">
-            <InformationCircleIcon className="w-4 h-4 text-primary-400 shrink-0" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-primary-300">
-              Included Room Facilities & Specifications
-            </h3>
+        <div className="rounded-2xl bg-[#0e1529]/90 border border-white/10 p-4 space-y-3 animate-fade-in shadow-inner">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <InformationCircleIcon className="w-4 h-4 text-primary-400 shrink-0" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                Included Room Facilities & Specifications
+              </h3>
+            </div>
+            <span className="text-[11px] text-slate-500 font-medium">
+              Built-in hardware
+            </span>
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             {selectedRoomInfos.map(({ name, details }) => (
               <div
                 key={name}
-                className="bg-surface-900/60 border border-white/8 rounded-xl p-3 flex flex-col gap-2"
+                className="bg-surface-900/70 border border-white/[0.07] rounded-xl p-3.5 space-y-3"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-bold text-white">{name}</span>
-                  {details.expandable ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                      <UsersIcon className="w-3.5 h-3.5" />
-                      Expandable · Base {details.capacity} (Max Limit {details.maxCapacity})
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-500/20 text-slate-300 border border-white/10">
-                      <UsersIcon className="w-3.5 h-3.5" />
-                      Non-Expandable · Max Capacity {details.maxCapacity}
-                    </span>
-                  )}
+                  <span className="text-sm font-bold text-white tracking-tight">{name}</span>
+                  <RoomCapacityBadge details={details} detailed />
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                      details.hasMonitor
-                        ? 'bg-sky-500/15 text-sky-300 border-sky-500/25'
-                        : 'bg-white/5 text-slate-500 border-white/5'
-                    }`}
-                  >
-                    <ComputerDesktopIcon className="w-3.5 h-3.5" />
-                    {details.hasMonitor ? `${details.monitor} ✓` : 'No Monitor'}
-                  </span>
-
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                      details.hasProjector
-                        ? 'bg-violet-500/15 text-violet-300 border-violet-500/25'
-                        : 'bg-white/5 text-slate-500 border-white/5'
-                    }`}
-                  >
-                    <VideoCameraIcon className="w-3.5 h-3.5" />
-                    {details.hasProjector ? `${details.projector} ✓` : 'No Projector'}
-                  </span>
-
-                  {details.chromecast && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/25">
-                      <SignalIcon className="w-3.5 h-3.5" />
-                      Chromecast ✓
-                    </span>
-                  )}
-
-                  {details.powerExtension && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-teal-500/15 text-teal-300 border border-teal-500/25">
-                      <BoltIcon className="w-3.5 h-3.5" />
-                      Power Extension Cable ✓
-                    </span>
-                  )}
-                </div>
+                <RoomFacilityTags details={details} variant="detailed" />
               </div>
             ))}
           </div>

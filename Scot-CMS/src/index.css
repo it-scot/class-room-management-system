@@ -281,6 +281,80 @@
 .animate-fade-in  { animation: fade-in  0.25s ease both; }
 .animate-slide-up { animation: slide-up 0.35s ease both; }
 
+/* ── Room Hardware Icon Micro-Animations ─────────────────────────────────── */
+@keyframes screen-scan {
+  0%, 100% { transform: translateY(0); opacity: 0.25; }
+  50%      { transform: translateY(4px); opacity: 0.85; }
+}
+@keyframes projector-beam {
+  0%, 100% { opacity: 0.25; transform: scaleX(0.92); }
+  50%      { opacity: 0.85; transform: scaleX(1.06); }
+}
+@keyframes cast-wave {
+  0%, 100% { opacity: 0.2; }
+  45%, 65% { opacity: 1; }
+}
+@keyframes power-spark {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.12); }
+}
+@keyframes seat-expand {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(1.5px); }
+}
+
+.icon-screen-scan {
+  animation: screen-scan 2.8s ease-in-out infinite;
+}
+.icon-projector-beam {
+  transform-origin: left center;
+  animation: projector-beam 2.6s ease-in-out infinite;
+}
+.icon-cast-wave-1 {
+  animation: cast-wave 2.1s ease-in-out infinite 0s;
+}
+.icon-cast-wave-2 {
+  animation: cast-wave 2.1s ease-in-out infinite 0.32s;
+}
+.icon-cast-wave-3 {
+  animation: cast-wave 2.1s ease-in-out infinite 0.64s;
+}
+.icon-power-spark {
+  transform-origin: center;
+  animation: power-spark 2.2s ease-in-out infinite;
+}
+.icon-seat-expand {
+  animation: seat-expand 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-screen-scan,
+  .icon-projector-beam,
+  .icon-cast-wave-1,
+  .icon-cast-wave-2,
+  .icon-cast-wave-3,
+  .icon-power-spark,
+  .icon-seat-expand {
+    animation: none;
+  }
+}
+
+/* Tactile hardware spec tag */
+.facility-chip {
+  @apply inline-flex items-center gap-2 rounded-xl border border-white/[0.08]
+         bg-[#0d1324]/85 px-2.5 py-1.5 text-left transition-all duration-200;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.group:hover .facility-chip,
+.facility-chip:hover {
+  @apply border-white/[0.16] bg-[#121a31];
+  transform: translateY(-1px);
+}
+.facility-chip-selected {
+  @apply border-white/[0.15] bg-[#111933]/95;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
 /* ── Safe area for iOS notch ─────────────────────────────────────────────── */
 @supports (padding: env(safe-area-inset-bottom)) {
   body { padding-bottom: env(safe-area-inset-bottom); }
