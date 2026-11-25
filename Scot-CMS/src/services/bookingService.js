@@ -34,30 +34,31 @@ export const createBooking = async (bookingData) => {
       existingSlots = lockSnap.data().slots || [];
     }
 
-    // Check for overlap and clean up ghosts
+    // Check for overlap and clean up ghosts (read all existing slot bookings in parallel inside the transaction)
     const validSlots = [];
     let isOverlapping = false;
 
-    for (const slot of existingSlots) {
-      // Check real status from DB to prevent ghost locks
-      const bRef = doc(db, BOOKINGS_COL, slot.bookingId);
-      const bSnap = await transaction.get(bRef);
-      
+    const slotSnaps = await Promise.all(
+      existingSlots.map((slot) => transaction.get(doc(db, BOOKINGS_COL, slot.bookingId)))
+    );
+
+    existingSlots.forEach((slot, idx) => {
+      const bSnap = slotSnaps[idx];
       if (!bSnap.exists()) {
-        continue; // Ghost lock (booking was deleted)
+        return; // Ghost lock (booking was deleted)
       }
-      
+
       const realStatus = bSnap.data().status;
       if (realStatus === 'Rejected' || realStatus === 'Cancelled') {
-        continue; // Ghost lock (booking was rejected/cancelled but lock wasn't updated)
+        return; // Ghost lock (booking was rejected/cancelled but lock wasn't updated)
       }
-      
+
       validSlots.push(slot); // Keep valid slots
 
       if (timesOverlap(bookingData.startTime, bookingData.endTime, slot.startTime, slot.endTime)) {
         isOverlapping = true;
       }
-    }
+    });
 
     if (isOverlapping) {
       throw new Error('This slot was just booked by someone else. Please select another time.');
@@ -142,16 +143,23 @@ export const subscribeToAllBookings = (callback, onError) => {
 /**
  * Subscribe to a user's own bookings in real-time.
  */
-export const subscribeToUserBookings = (userId, callback) => {
+export const subscribeToUserBookings = (userId, callback, onError) => {
   const q = query(
     collection(db, BOOKINGS_COL),
     where('userId', '==', userId),
     orderBy('createdAt', 'desc'),
   );
-  return onSnapshot(q, (snap) => {
-    const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(bookings);
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      callback(bookings);
+    },
+    (err) => {
+      console.error('[subscribeToUserBookings] Firestore listener error:', err);
+      if (onError) onError(err);
+    }
+  );
 };
 
 /**

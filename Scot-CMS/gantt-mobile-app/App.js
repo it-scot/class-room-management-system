@@ -186,10 +186,13 @@ function ScotMobileApp() {
     })();
   }, []);
 
-  // Clock refresh every 15s so live NOW line & "Synced Xs ago" stay fresh
+  // Clock refresh every 15s so live NOW line & "Synced Xs ago" stay fresh; cleanup toast timer on unmount
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 15000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      clearTimeout(toastTimerRef.current);
+    };
   }, []);
 
   const recordAlert = (title, body, targetDate = null, targetTab = null) => {
@@ -286,6 +289,11 @@ function ScotMobileApp() {
 
     const controller = startScheduleSync(portalUrl, apiKey, {
       onStatus: (st) => setSyncStatus(st),
+      onHeartbeat: () => {
+        setSyncError('');
+        setLastSyncedAt(new Date());
+        setRefreshing(false);
+      },
       onSnapshot: ({ buildings: blds, bookings: rms, equipmentBookings: eqs }) => {
         setSyncError('');
         setLastSyncedAt(new Date());

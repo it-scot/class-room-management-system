@@ -14,7 +14,9 @@ const postToApi = async (url, payload, logLabel) => {
     clearTimeout(timeoutId);
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || `Server responded ${res.status}`);
+      const err = new Error(errorData.error || `Server responded ${res.status}`);
+      err.status = res.status;
+      throw err;
     }
     console.log(`[emailService] ${logLabel} sent.`);
     return res.json().catch(() => ({ ok: true }));
@@ -22,7 +24,9 @@ const postToApi = async (url, payload, logLabel) => {
     clearTimeout(timeoutId);
     const msg = err.name === 'AbortError' ? 'Request Timeout' : err.message;
     console.error(`[emailService] Failed (${logLabel}):`, msg);
-    throw new Error(msg, { cause: err });
+    const wrapped = new Error(msg, { cause: err });
+    if (err.status) wrapped.status = err.status;
+    throw wrapped;
   }
 };
 

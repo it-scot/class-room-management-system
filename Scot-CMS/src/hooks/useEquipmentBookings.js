@@ -31,9 +31,10 @@ export const useEquipmentBookings = (all = false) => {
   const [bookings, setBookings] = useState([]);
   const [loadedKey, setLoadedKey] = useState(null);
 
+  const userId = user?.uid || null;
   const shouldFetchAll = all || isAdmin;
-  const canSubscribe = Boolean(user) || all;
-  const subKey = canSubscribe ? `${user?.uid || 'anon'}:${shouldFetchAll ? 'all' : 'own'}` : null;
+  const canSubscribe = Boolean(userId) || all;
+  const subKey = canSubscribe ? `${userId || 'anon'}:${shouldFetchAll ? 'all' : 'own'}` : null;
 
   useEffect(() => {
     if (!canSubscribe || !subKey) return undefined;
@@ -46,10 +47,10 @@ export const useEquipmentBookings = (all = false) => {
 
     const unsub = shouldFetchAll
       ? subscribeToAllEquipmentBookings(handleData, handleErr)
-      : subscribeToUserEquipmentBookings(user.uid, handleData, handleErr);
+      : subscribeToUserEquipmentBookings(userId, handleData, handleErr);
 
     return () => unsub();
-  }, [user, canSubscribe, shouldFetchAll, subKey]);
+  }, [userId, canSubscribe, shouldFetchAll, subKey]);
 
   return {
     bookings: canSubscribe ? bookings : [],

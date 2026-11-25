@@ -7,7 +7,8 @@ import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale/en-US';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
-import { useAllBookings, useBookings } from '../hooks/useBookings';
+import { useAllBookings } from '../hooks/useBookings';
+import { useAuth } from '../store/AuthContext';
 
 import { formatDate, combineDateAndTime, isBeforeMinBookingDate } from '../utils/dateHelpers';
 import { getRoomColorClass } from '../utils/constants';
@@ -31,11 +32,21 @@ const locales   = { 'en-US': enUS };
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
 
 const DashboardPage = () => {
-  const { bookings, loading } = useAllBookings();           // all bookings → calendar
-  const { bookings: myBookings } = useBookings(false);       // own bookings → stats
+  const { bookings, loading } = useAllBookings();           // single real-time listener → calendar + stats
+  const { user }              = useAuth();
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedDay,     setSelectedDay]     = useState(null);
   const [currentDate,     setCurrentDate]     = useState(new Date());
+
+  // Derive user's own bookings from the already-subscribed collection (avoids a duplicate Firestore listener)
+  const myBookings = useMemo(() => {
+    if (!user) return [];
+    const uid = user.uid;
+    const email = (user.email || '').toLowerCase();
+    return bookings.filter(
+      b => (uid && b.userId === uid) || (email && (b.userEmail || '').toLowerCase() === email)
+    );
+  }, [bookings, user]);
   
 
 

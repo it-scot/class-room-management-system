@@ -1,7 +1,7 @@
 // src/store/AuthContext.jsx
 // Global auth state provider. Wraps the entire app.
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { getUserRole } from '../services/authService';
@@ -48,14 +48,14 @@ export const AuthProvider = ({ children }) => {
     return unsubscribe;
   }, []);
 
-  const value = {
+  const value = useMemo(() => ({
     user,
     role,
     loading,
     authError,
     setAuthError,
     isAdmin: role === 'admin',
-  };
+  }), [user, role, loading, authError]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

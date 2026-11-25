@@ -42,6 +42,7 @@ import { useEquipmentCatalog } from '../hooks/useEquipmentCatalog';
 import {
   createEquipmentBooking,
   updateEquipmentBookingStatus,
+  deleteEquipmentBooking,
 } from '../services/equipmentBookingService';
 import {
   sendNewEquipmentBookingEmail,
@@ -133,32 +134,48 @@ const BookEquipmentPage = () => {
     );
   }, [allBookings, canSeeAll, user]);
 
+  // ─── Pre-indexed Same-Day Usage Map (O(1) lookup per item card instead of O(N×M) scan per render) ──
+  const usageByDate = useMemo(() => {
+    const byDate = new Map();
+    allBookings.forEach((b) => {
+      if (
+        !b.date ||
+        b.status === BOOKING_STATUS.REJECTED ||
+        b.status === BOOKING_STATUS.CANCELLED
+      ) {
+        return;
+      }
+      let bucket = byDate.get(b.date);
+      if (!bucket) {
+        bucket = { byId: new Map(), byName: new Map() };
+        byDate.set(b.date, bucket);
+      }
+      (b.items || []).forEach((it) => {
+        const qty = Number(it.quantity || 1);
+        const itId = (it.id || '').toLowerCase();
+        const itName = (it.name || '').toLowerCase();
+        if (itId) bucket.byId.set(itId, (bucket.byId.get(itId) || 0) + qty);
+        if (itName) bucket.byName.set(itName, (bucket.byName.get(itName) || 0) + qty);
+      });
+    });
+    return byDate;
+  }, [allBookings]);
+
   // ─── Live Same-Day Availability Calculator (always across ALL users' active bookings) ──
   const getAvailabilityForDate = (catalogItem, dateStr = formData.date) => {
     const totalQty = Math.max(1, Number(catalogItem?.maxQuantity || 1));
     if (!dateStr || !catalogItem) {
       return { totalQty, usedQty: 0, remainingQty: totalQty, isFullyBooked: false };
     }
+    const bucket = usageByDate.get(dateStr);
+    if (!bucket) {
+      return { totalQty, usedQty: 0, remainingQty: totalQty, isFullyBooked: false };
+    }
     const targetId = (catalogItem.id || '').toLowerCase();
     const targetName = (catalogItem.name || '').toLowerCase();
-
-    let usedQty = 0;
-    allBookings.forEach((b) => {
-      if (
-        b.date !== dateStr ||
-        b.status === BOOKING_STATUS.REJECTED ||
-        b.status === BOOKING_STATUS.CANCELLED
-      ) {
-        return;
-      }
-      (b.items || []).forEach((it) => {
-        const itId = (it.id || '').toLowerCase();
-        const itName = (it.name || '').toLowerCase();
-        if ((targetId && itId === targetId) || (targetName && itName === targetName)) {
-          usedQty += Number(it.quantity || 1);
-        }
-      });
-    });
+    const usedById = targetId ? (bucket.byId.get(targetId) || 0) : 0;
+    const usedByName = targetName ? (bucket.byName.get(targetName) || 0) : 0;
+    const usedQty = Math.max(usedById, usedByName);
 
     const remainingQty = Math.max(0, totalQty - usedQty);
     return {
@@ -388,6 +405,12 @@ const BookEquipmentPage = () => {
       try {
         await sendNewEquipmentBookingEmail({ ...payload, id: bookingId, status: BOOKING_STATUS.APPROVED });
       } catch (emailErr) {
+        // If server rejected due to concurrent stock conflict (409) or rule violation (400), rollback Firestore doc
+        if (emailErr.status === 409 || emailErr.status === 400) {
+          await deleteEquipmentBooking(bookingId).catch(() => {});
+          setStep(0);
+          throw emailErr;
+        }
         console.warn('[Equipment Email]', emailErr.message);
       }
 

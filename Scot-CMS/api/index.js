@@ -510,8 +510,18 @@ const sanitizeEquipmentBooking = (id, d) => {
   };
 };
 
+// Short-TTL in-memory schedule cache so simultaneous mobile devices share Firestore reads
+const SCHEDULE_CACHE_TTL_MS = 3000;
+const _scheduleCache = new Map();
+let _hasEquipmentSheetTab = false;
+
+const invalidateScheduleCache = () => {
+  _scheduleCache.clear();
+};
+
 const fetchActiveRoomBookings = async (filterDate = null) => {
   let bookings = [];
+  let firestoreSucceeded = false;
 
   // 1. Primary: Firestore via firebase-admin
   try {
@@ -525,13 +535,14 @@ const fetchActiveRoomBookings = async (filterDate = null) => {
       bookings = snap.docs
         .map((doc) => sanitizeRoomBooking(doc.id, doc.data() || {}))
         .filter((b) => b.status !== 'Rejected' && b.status !== 'Cancelled');
+      firestoreSucceeded = true;
     }
   } catch (fsErr) {
     console.warn('[GANTT API] Firestore rooms fallback to Sheets:', fsErr.message);
   }
 
-  // 2. Fallback: Google Sheets
-  if (bookings.length === 0) {
+  // 2. Fallback: Google Sheets (ONLY if Firestore is unavailable or failed — never on a valid empty result)
+  if (!firestoreSucceeded) {
     try {
       const sheets = getSheets();
       const spreadsheetId = getSpreadsheetId();
@@ -574,6 +585,7 @@ const fetchActiveRoomBookings = async (filterDate = null) => {
 
 const fetchActiveEquipmentBookings = async (filterDate = null) => {
   let equipmentBookings = [];
+  let firestoreSucceeded = false;
 
   // 1. Primary: Firestore via firebase-admin
   try {
@@ -587,13 +599,14 @@ const fetchActiveEquipmentBookings = async (filterDate = null) => {
       equipmentBookings = snap.docs
         .map((doc) => sanitizeEquipmentBooking(doc.id, doc.data() || {}))
         .filter((b) => b.status !== 'Rejected' && b.status !== 'Cancelled');
+      firestoreSucceeded = true;
     }
   } catch (fsErr) {
     console.warn('[GANTT API] Firestore equipment fallback to Sheets:', fsErr.message);
   }
 
-  // 2. Fallback: Google Sheets EquipmentBookings tab
-  if (equipmentBookings.length === 0) {
+  // 2. Fallback: Google Sheets EquipmentBookings tab (ONLY if Firestore failed or is unavailable)
+  if (!firestoreSucceeded) {
     try {
       const sheets = getSheets();
       const spreadsheetId = getSpreadsheetId();
@@ -650,18 +663,26 @@ const handleGanttScheduleRequest = async (req, res) => {
   try {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const filterDate = req.query.date || null;
+    const cacheKey = `schedule:${filterDate || 'all'}`;
+    const cached = _scheduleCache.get(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt < SCHEDULE_CACHE_TTL_MS) {
+      return res.json(cached.payload);
+    }
+
     const [bookings, equipmentBookings] = await Promise.all([
       fetchActiveRoomBookings(filterDate),
       fetchActiveEquipmentBookings(filterDate),
     ]);
 
-    res.json({
+    const payload = {
       ok: true,
       updatedAt: new Date().toISOString(),
       buildings: GANTT_BUILDINGS,
       bookings,
       equipmentBookings,
-    });
+    };
+    _scheduleCache.set(cacheKey, { fetchedAt: Date.now(), payload });
+    res.json(payload);
   } catch (error) {
     console.error('[GANTT SCHEDULE] Unexpected error:', error);
     res.status(500).json({ ok: false, error: 'Failed to load Gantt schedule' });
@@ -677,12 +698,20 @@ app.get('/api/gantt/equipment', requireGanttApiKey, async (req, res) => {
   try {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const filterDate = req.query.date || null;
+    const cacheKey = `equipment:${filterDate || 'all'}`;
+    const cached = _scheduleCache.get(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt < SCHEDULE_CACHE_TTL_MS) {
+      return res.json(cached.payload);
+    }
+
     const equipmentBookings = await fetchActiveEquipmentBookings(filterDate);
-    res.json({
+    const payload = {
       ok: true,
       updatedAt: new Date().toISOString(),
       equipmentBookings,
-    });
+    };
+    _scheduleCache.set(cacheKey, { fetchedAt: Date.now(), payload });
+    res.json(payload);
   } catch (error) {
     console.error('[GANTT EQUIPMENT] Unexpected error:', error);
     res.status(500).json({ ok: false, error: 'Failed to load equipment schedule' });
@@ -700,14 +729,25 @@ app.post('/api/gantt/equipment/issue', requireGanttApiKey, async (req, res) => {
     const issuedAt = new Date().toISOString();
     let stored = booking;
 
-    // 1. Persist issued flag in Firestore so all devices stay in sync
+    // 1. Persist issued flag in Firestore so all devices stay in sync (with idempotency guard)
     if (hasFirebaseAdmin()) {
       try {
         const db = getFirestore();
         const ref = db.collection('equipment_bookings').doc(booking.id);
         const snap = await ref.get();
         if (snap.exists) {
-          stored = { id: snap.id, ...snap.data(), ...booking };
+          const existing = snap.data() || {};
+          if (existing.issued) {
+            return res.json({
+              ok: true,
+              id: booking.id,
+              issued: true,
+              alreadyIssued: true,
+              issuedAt: existing.issuedAt || issuedAt,
+              notified: [],
+            });
+          }
+          stored = { id: snap.id, ...existing, ...booking };
         }
         await ref.set(
           {
@@ -716,6 +756,7 @@ app.post('/api/gantt/equipment/issue', requireGanttApiKey, async (req, res) => {
           },
           { merge: true }
         );
+        invalidateScheduleCache();
       } catch (fsErr) {
         console.warn('[EQUIPMENT ISSUED] Firestore update skipped:', fsErr.message);
       }
@@ -981,35 +1022,44 @@ app.post('/api/bookings/new', async (req, res) => {
       });
 
       const transporter = getTransporter();
+      const mailTasks = [];
       if (recipients.length > 0) {
-        await transporter.sendMail({
-          from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-          to:      recipients.join(', '),
-          subject: `[${APP_TAG}] Room Booking Confirmed: ${booking.room} on ${booking.date}`,
-          html:    newBookingHtml(booking),
-          icalEvent: {
-            filename: 'invitation.ics',
-            method: 'request',
-            content: icsContent,
-          },
-        });
-        console.log('[EMAIL SENT] Calendar invite →', recipients.join(', '));
+        mailTasks.push(
+          transporter.sendMail({
+            from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+            to:      recipients.join(', '),
+            subject: `[${APP_TAG}] Room Booking Confirmed: ${booking.room} on ${booking.date}`,
+            html:    newBookingHtml(booking),
+            icalEvent: {
+              filename: 'invitation.ics',
+              method: 'request',
+              content: icsContent,
+            },
+          }).then(() => console.log('[EMAIL SENT] Calendar invite →', recipients.join(', ')))
+        );
       }
 
       // Trigger classroom alert to dayananda@scot.lk for operations/cleaning/opening readiness
       if (!recipients.includes(OPERATIONS_ALERT_EMAIL)) {
-        await transporter.sendMail({
-          from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-          to:      OPERATIONS_ALERT_EMAIL,
-          subject: `[${APP_TAG} Alert] Classroom Booked: ${booking.room} (${booking.date} ${booking.startTime}–${booking.endTime})`,
-          html:    newBookingHtml(booking),
-        });
-        console.log('[OPERATIONS ALERT SENT] →', OPERATIONS_ALERT_EMAIL);
+        mailTasks.push(
+          transporter.sendMail({
+            from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+            to:      OPERATIONS_ALERT_EMAIL,
+            subject: `[${APP_TAG} Alert] Classroom Booked: ${booking.room} (${booking.date} ${booking.startTime}–${booking.endTime})`,
+            html:    newBookingHtml(booking),
+          }).then(() => console.log('[OPERATIONS ALERT SENT] →', OPERATIONS_ALERT_EMAIL))
+        );
       }
+
+      const mailResults = await Promise.allSettled(mailTasks);
+      mailResults.forEach((r) => {
+        if (r.status === 'rejected') console.error('[EMAIL FAILED] But booking was saved to sheets:', r.reason?.message || r.reason);
+      });
     } catch (emailErr) {
       console.error('[EMAIL FAILED] But booking was saved to sheets:', emailErr.message);
     }
 
+    invalidateScheduleCache();
     res.json({ ok: true, message: 'Booking processed successfully' });
   } catch (error) {
     console.error('[NEW BOOKING] Unexpected error:', error);
@@ -1031,28 +1081,32 @@ app.post('/api/bookings/status', async (req, res) => {
     const recipients = getBookingInviteRecipients(booking);
 
     const results = await Promise.allSettled([
-      // Send status update email ONLY to Book For + Supervisor, plus trigger to dayananda@scot.lk
+      // Send status update email ONLY to Book For + Supervisor, plus trigger to dayananda@scot.lk (in parallel)
       (async () => {
         const transporter = getTransporter();
+        const tasks = [];
         if (recipients.length > 0) {
-          await transporter.sendMail({
-            from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-            to:      recipients.join(', '),
-            subject: `[${APP_TAG}] Booking ${booking.status}: ${booking.room} on ${booking.date}`,
-            html:    statusUpdateHtml(booking),
-          });
-          console.log('[EMAIL SENT] Status update →', recipients.join(', '));
+          tasks.push(
+            transporter.sendMail({
+              from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+              to:      recipients.join(', '),
+              subject: `[${APP_TAG}] Booking ${booking.status}: ${booking.room} on ${booking.date}`,
+              html:    statusUpdateHtml(booking),
+            }).then(() => console.log('[EMAIL SENT] Status update →', recipients.join(', ')))
+          );
         }
 
         if (!recipients.includes(OPERATIONS_ALERT_EMAIL)) {
-          await transporter.sendMail({
-            from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-            to:      OPERATIONS_ALERT_EMAIL,
-            subject: `[${APP_TAG} Alert] Classroom Booking ${booking.status}: ${booking.room} (${booking.date})`,
-            html:    statusUpdateHtml(booking),
-          });
-          console.log('[OPERATIONS ALERT SENT] Status update →', OPERATIONS_ALERT_EMAIL);
+          tasks.push(
+            transporter.sendMail({
+              from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+              to:      OPERATIONS_ALERT_EMAIL,
+              subject: `[${APP_TAG} Alert] Classroom Booking ${booking.status}: ${booking.room} (${booking.date})`,
+              html:    statusUpdateHtml(booking),
+            }).then(() => console.log('[OPERATIONS ALERT SENT] Status update →', OPERATIONS_ALERT_EMAIL))
+          );
         }
+        await Promise.all(tasks);
       })(),
 
       // Update sheet status
@@ -1082,6 +1136,7 @@ app.post('/api/bookings/status', async (req, res) => {
       if (r.status === 'rejected') console.error(`[ERROR] Task ${i === 0 ? 'email' : 'sheets'}:`, r.reason?.message || r.reason);
     });
 
+    invalidateScheduleCache();
     res.json({ ok: true });
   } catch (error) {
     console.error('[STATUS UPDATE] Unexpected error:', error);
@@ -1118,7 +1173,8 @@ app.post('/api/equipment-bookings/new', async (req, res) => {
         const stockByName = new Map();
         catalogSnap.docs.forEach((doc) => {
           const d = doc.data() || {};
-          const qty = Number(d.totalQty);
+          if (d.deleted) return;
+          const qty = Number(d.maxQuantity ?? d.totalQty);
           if (!Number.isNaN(qty) && qty >= 0) {
             stockById.set(doc.id, qty);
             if (d.name) stockByName.set(String(d.name).toLowerCase(), qty);
@@ -1165,26 +1221,29 @@ app.post('/api/equipment-bookings/new', async (req, res) => {
       }
     }
 
-    // 1. Append to EquipmentBookings sheet tab (non-blocking if tab doesn't exist yet)
+    // 1. Append to EquipmentBookings sheet tab (cache tab check so we don't fetch workbook metadata every time)
     try {
       const sheets = getSheets();
       const spreadsheetId = getSpreadsheetId();
       if (sheets && spreadsheetId) {
-        const meta = await sheets.spreadsheets.get({ spreadsheetId });
-        const hasTab = (meta.data.sheets || []).some(s => s.properties?.title === EQUIPMENT_SHEET_NAME);
-        if (!hasTab) {
-          await sheets.spreadsheets.batchUpdate({
-            spreadsheetId,
-            requestBody: {
-              requests: [{ addSheet: { properties: { title: EQUIPMENT_SHEET_NAME } } }],
-            },
-          });
-          await sheets.spreadsheets.values.update({
-            spreadsheetId,
-            range: `${EQUIPMENT_SHEET_NAME}!A1`,
-            valueInputOption: 'RAW',
-            requestBody: { values: [EQUIPMENT_HEADERS] },
-          });
+        if (!_hasEquipmentSheetTab) {
+          const meta = await sheets.spreadsheets.get({ spreadsheetId });
+          const hasTab = (meta.data.sheets || []).some(s => s.properties?.title === EQUIPMENT_SHEET_NAME);
+          if (!hasTab) {
+            await sheets.spreadsheets.batchUpdate({
+              spreadsheetId,
+              requestBody: {
+                requests: [{ addSheet: { properties: { title: EQUIPMENT_SHEET_NAME } } }],
+              },
+            });
+            await sheets.spreadsheets.values.update({
+              spreadsheetId,
+              range: `${EQUIPMENT_SHEET_NAME}!A1`,
+              valueInputOption: 'RAW',
+              requestBody: { values: [EQUIPMENT_HEADERS] },
+            });
+          }
+          _hasEquipmentSheetTab = true;
         }
         await sheets.spreadsheets.values.append({
           spreadsheetId,
@@ -1195,10 +1254,11 @@ app.post('/api/equipment-bookings/new', async (req, res) => {
         });
       }
     } catch (sheetErr) {
+      _hasEquipmentSheetTab = false;
       console.error('[EQUIPMENT SHEETS] Error:', sheetErr.message);
     }
 
-    // 2. Send Calendar Invite to Book For + Supervisor + alert to dayananda@scot.lk
+    // 2. Send Calendar Invite to Book For + Supervisor + alert to equipment ops team (in parallel)
     try {
       const recipients = getBookingInviteRecipients(booking);
       const itemsText = booking.items.map(i => `${i.name} (x${i.quantity || 1})`).join(', ');
@@ -1214,34 +1274,44 @@ app.post('/api/equipment-bookings/new', async (req, res) => {
       });
 
       const transporter = getTransporter();
+      const mailTasks = [];
       if (recipients.length > 0) {
-        await transporter.sendMail({
-          from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-          to:      recipients.join(', '),
-          subject: `[${APP_TAG}] Equipment Booking Confirmed: ${itemsText} (${booking.date})`,
-          html:    equipmentBookingHtml(booking, 'Equipment Booking Confirmed'),
-          icalEvent: {
-            filename: 'equipment-invitation.ics',
-            method: 'request',
-            content: icsContent,
-          },
-        });
+        mailTasks.push(
+          transporter.sendMail({
+            from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+            to:      recipients.join(', '),
+            subject: `[${APP_TAG}] Equipment Booking Confirmed: ${itemsText} (${booking.date})`,
+            html:    equipmentBookingHtml(booking, 'Equipment Booking Confirmed'),
+            icalEvent: {
+              filename: 'equipment-invitation.ics',
+              method: 'request',
+              content: icsContent,
+            },
+          })
+        );
       }
 
       const equipmentAlerts = EQUIPMENT_ALERT_EMAILS.filter(e => !recipients.includes(e));
       if (equipmentAlerts.length > 0) {
-        await transporter.sendMail({
-          from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-          to:      equipmentAlerts.join(', '),
-          subject: `[${APP_TAG} Alert] Equipment Booked: ${itemsText} (${booking.date} ${booking.startTime}–${booking.endTime})`,
-          html:    equipmentBookingHtml(booking, 'New Equipment Booking Alert'),
-        });
-        console.log('[EQUIPMENT ALERT SENT] →', equipmentAlerts.join(', '));
+        mailTasks.push(
+          transporter.sendMail({
+            from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+            to:      equipmentAlerts.join(', '),
+            subject: `[${APP_TAG} Alert] Equipment Booked: ${itemsText} (${booking.date} ${booking.startTime}–${booking.endTime})`,
+            html:    equipmentBookingHtml(booking, 'New Equipment Booking Alert'),
+          }).then(() => console.log('[EQUIPMENT ALERT SENT] →', equipmentAlerts.join(', ')))
+        );
       }
+
+      const mailResults = await Promise.allSettled(mailTasks);
+      mailResults.forEach((r) => {
+        if (r.status === 'rejected') console.error('[EQUIPMENT EMAIL] Error:', r.reason?.message || r.reason);
+      });
     } catch (emailErr) {
       console.error('[EQUIPMENT EMAIL] Error:', emailErr.message);
     }
 
+    invalidateScheduleCache();
     res.json({ ok: true, message: 'Equipment booking processed successfully' });
   } catch (error) {
     console.error('[NEW EQUIPMENT BOOKING] Unexpected error:', error);
@@ -1264,24 +1334,29 @@ app.post('/api/equipment-bookings/status', async (req, res) => {
     await Promise.allSettled([
       (async () => {
         const transporter = getTransporter();
+        const tasks = [];
         if (recipients.length > 0) {
-          await transporter.sendMail({
-            from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-            to:      recipients.join(', '),
-            subject: `[${APP_TAG}] Equipment Booking ${booking.status}: ${itemsText}`,
-            html:    equipmentBookingHtml(booking, `Equipment Booking ${booking.status}`),
-          });
+          tasks.push(
+            transporter.sendMail({
+              from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+              to:      recipients.join(', '),
+              subject: `[${APP_TAG}] Equipment Booking ${booking.status}: ${itemsText}`,
+              html:    equipmentBookingHtml(booking, `Equipment Booking ${booking.status}`),
+            })
+          );
         }
         const equipmentAlerts = EQUIPMENT_ALERT_EMAILS.filter(e => !recipients.includes(e));
         if (equipmentAlerts.length > 0) {
-          await transporter.sendMail({
-            from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
-            to:      equipmentAlerts.join(', '),
-            subject: `[${APP_TAG} Alert] Equipment Booking ${booking.status}: ${itemsText}`,
-            html:    equipmentBookingHtml(booking, `Equipment Booking ${booking.status}`),
-          });
-          console.log('[EQUIPMENT ALERT SENT] Status update →', equipmentAlerts.join(', '));
+          tasks.push(
+            transporter.sendMail({
+              from:    `"${APP_NAME}" <${process.env.GMAIL_USER}>`,
+              to:      equipmentAlerts.join(', '),
+              subject: `[${APP_TAG} Alert] Equipment Booking ${booking.status}: ${itemsText}`,
+              html:    equipmentBookingHtml(booking, `Equipment Booking ${booking.status}`),
+            }).then(() => console.log('[EQUIPMENT ALERT SENT] Status update →', equipmentAlerts.join(', ')))
+          );
         }
+        await Promise.all(tasks);
       })(),
       (async () => {
         const sheets = getSheets();
@@ -1302,6 +1377,7 @@ app.post('/api/equipment-bookings/status', async (req, res) => {
       })(),
     ]);
 
+    invalidateScheduleCache();
     res.json({ ok: true });
   } catch (error) {
     console.error('[EQUIPMENT STATUS] Error:', error);

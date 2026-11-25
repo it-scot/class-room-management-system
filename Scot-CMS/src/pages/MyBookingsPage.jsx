@@ -6,7 +6,6 @@ import { useBookings }           from '../hooks/useBookings';
 import { useEquipmentBookings }  from '../hooks/useEquipmentBookings';
 import { updateBookingStatus }   from '../services/bookingService';
 import { updateEquipmentBookingStatus } from '../services/equipmentBookingService';
-import { updateSheetStatus }     from '../services/sheetsService';
 import {
   sendStatusUpdateEmail,
   sendEquipmentStatusUpdateEmail,
@@ -45,14 +44,17 @@ const MyBookingsPage = () => {
         if (!booking) throw new Error('Booking not found');
 
         await updateBookingStatus(toDelete.id, BOOKING_STATUS.CANCELLED, 'Cancelled by user');
-        await updateSheetStatus(toDelete.id, BOOKING_STATUS.CANCELLED);
-        await sendStatusUpdateEmail({ ...booking, status: BOOKING_STATUS.CANCELLED, adminReason: 'Cancelled by user' });
+        sendStatusUpdateEmail({ ...booking, status: BOOKING_STATUS.CANCELLED, adminReason: 'Cancelled by user' }).catch(
+          (err) => console.warn('[Cancel Room Email]', err?.message)
+        );
       } else {
         const booking = eqBookings.find(b => b.id === toDelete.id);
         if (!booking) throw new Error('Equipment booking not found');
 
         await updateEquipmentBookingStatus(toDelete.id, BOOKING_STATUS.CANCELLED, 'Cancelled by user');
-        await sendEquipmentStatusUpdateEmail({ ...booking, status: BOOKING_STATUS.CANCELLED, adminReason: 'Cancelled by user' });
+        sendEquipmentStatusUpdateEmail({ ...booking, status: BOOKING_STATUS.CANCELLED, adminReason: 'Cancelled by user' }).catch(
+          (err) => console.warn('[Cancel Equipment Email]', err?.message)
+        );
       }
 
       toast.success('Booking cancelled.');

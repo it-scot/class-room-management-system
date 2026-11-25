@@ -15,11 +15,12 @@ export const useBookings = (all = false) => {
   const [loadedKey, setLoadedKey] = useState(null);
   const [error, setError] = useState(null);
 
+  const userId = user?.uid || null;
   const shouldFetchAll = all || isAdmin;
-  const subKey = user ? `${user.uid}:${shouldFetchAll ? 'all' : 'own'}` : null;
+  const subKey = userId ? `${userId}:${shouldFetchAll ? 'all' : 'own'}` : null;
 
   useEffect(() => {
-    if (!user || !subKey) return undefined;
+    if (!userId || !subKey) return undefined;
 
     const handleData = (data) => {
       setBookings(data);
@@ -34,16 +35,16 @@ export const useBookings = (all = false) => {
 
     const unsubscribe = shouldFetchAll
       ? subscribeToAllBookings(handleData, handleError)
-      : subscribeToUserBookings(user.uid, handleData);
+      : subscribeToUserBookings(userId, handleData, handleError);
 
     return () => {
       unsubscribe();
     };
-  }, [user, shouldFetchAll, subKey]);
+  }, [userId, shouldFetchAll, subKey]);
 
   return {
-    bookings: user ? bookings : [],
-    loading: Boolean(user) && loadedKey !== subKey,
+    bookings: userId ? bookings : [],
+    loading: Boolean(userId) && loadedKey !== subKey,
     error,
   };
 };
