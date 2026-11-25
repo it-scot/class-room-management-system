@@ -12,28 +12,40 @@ import { useAuth } from '../store/AuthContext';
 export const useBookings = (all = false) => {
   const { user, isAdmin } = useAuth();
   const [bookings, setBookings] = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(null);
+  const [loadedKey, setLoadedKey] = useState(null);
+  const [error, setError] = useState(null);
+
+  const shouldFetchAll = all || isAdmin;
+  const subKey = user ? `${user.uid}:${shouldFetchAll ? 'all' : 'own'}` : null;
 
   useEffect(() => {
-    if (!user) {
-      setBookings([]);
-      setLoading(false);
-      return;
-    }
+    if (!user || !subKey) return undefined;
 
-    setLoading(true);
+    const handleData = (data) => {
+      setBookings(data);
+      setError(null);
+      setLoadedKey(subKey);
+    };
 
-    const shouldFetchAll = all || isAdmin;
+    const handleError = (err) => {
+      setError(err);
+      setLoadedKey(subKey);
+    };
 
     const unsubscribe = shouldFetchAll
-      ? subscribeToAllBookings((data) => { setBookings(data); setLoading(false); })
-      : subscribeToUserBookings(user.uid, (data) => { setBookings(data); setLoading(false); });
+      ? subscribeToAllBookings(handleData, handleError)
+      : subscribeToUserBookings(user.uid, handleData);
 
-    return () => { unsubscribe(); };
-  }, [user, isAdmin, all]);
+    return () => {
+      unsubscribe();
+    };
+  }, [user, shouldFetchAll, subKey]);
 
-  return { bookings, loading, error };
+  return {
+    bookings: user ? bookings : [],
+    loading: Boolean(user) && loadedKey !== subKey,
+    error,
+  };
 };
 
 /**
@@ -44,10 +56,13 @@ export const useAllBookings = () => {
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
-    const unsub = subscribeToAllBookings((data) => {
-      setBookings(data);
-      setLoading(false);
-    });
+    const unsub = subscribeToAllBookings(
+      (data) => {
+        setBookings(data);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
     return () => unsub();
   }, []);
 

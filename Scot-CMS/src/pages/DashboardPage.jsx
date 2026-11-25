@@ -1,16 +1,15 @@
 // src/pages/DashboardPage.jsx
 // Main dashboard with a monthly calendar and today's booking list.
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale/en-US';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 import { useAllBookings, useBookings } from '../hooks/useBookings';
-import { useAuth } from '../store/AuthContext';
 
-import { formatDate, parseDateStr, combineDateAndTime, isBeforeMinBookingDate } from '../utils/dateHelpers';
+import { formatDate, combineDateAndTime, isBeforeMinBookingDate } from '../utils/dateHelpers';
 import { getRoomColorClass } from '../utils/constants';
 import Badge from '../components/common/Badge';
 import Spinner from '../components/common/Spinner';
@@ -34,7 +33,6 @@ const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales
 const DashboardPage = () => {
   const { bookings, loading } = useAllBookings();           // all bookings → calendar
   const { bookings: myBookings } = useBookings(false);       // own bookings → stats
-  const { user, isAdmin }     = useAuth();
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedDay,     setSelectedDay]     = useState(null);
   const [currentDate,     setCurrentDate]     = useState(new Date());

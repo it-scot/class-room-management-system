@@ -4,7 +4,7 @@
 import { signInWithPopup, signOut, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider } from './firebase';
-import { ALLOWED_DOMAIN } from '../utils/constants';
+import { ALLOWED_DOMAIN, ADMIN_EMAILS_FALLBACK } from '../utils/constants';
 
 /**
  * Sign in with Google popup.
@@ -34,11 +34,8 @@ export const signInWithGoogle = async () => {
   const userRef  = doc(db, 'users', user.uid);
   const userSnap = await getDoc(userRef);
 
-  let role = 'user';
-  
-  // Check fallback admins list first
-  const { ADMIN_EMAILS_FALLBACK } = await import('../utils/constants');
   const isFallbackAdmin = ADMIN_EMAILS_FALLBACK.includes(user.email.toLowerCase());
+  let role;
 
   if (!userSnap.exists()) {
     // Check if email is in admins collection
@@ -88,11 +85,8 @@ export const getUserRole = async (uid, email) => {
     role = userSnap.data().role || 'user';
   }
   
-  if (email) {
-    const { ADMIN_EMAILS_FALLBACK } = await import('../utils/constants');
-    if (ADMIN_EMAILS_FALLBACK.includes(email.toLowerCase())) {
-      role = 'admin';
-    }
+  if (email && ADMIN_EMAILS_FALLBACK.includes(email.toLowerCase())) {
+    role = 'admin';
   }
 
   return role;

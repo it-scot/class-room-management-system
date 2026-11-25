@@ -49,7 +49,7 @@ const GANTT_BUILDINGS = {
 if (process.env.NODE_ENV !== 'test') {
   try {
     admin.app();
-  } catch (e) {
+  } catch {
     try {
       const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '{}');
       if (serviceAccount && serviceAccount.project_id) {
@@ -68,8 +68,21 @@ const app  = express();
 const PORT = 3001;
 
 // ─── Middleware ─────────────────────────────────────────────────────────────
-app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization'],
+}));
+app.use(express.json({ limit: '1mb' }));
+
+// HTML sanitizer for all email templates (prevents HTML/XSS injection)
+const escapeHtml = (val) =>
+  String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
 // ─── Helpers & Env Validation ───────────────────────────────────────────────
 
@@ -220,13 +233,26 @@ const getBookingInviteRecipients = (booking) => {
   return [...new Set([...baseList, supervisor].filter(Boolean))];
 };
 
+// Helper: Sanitize single-line ICS text values to prevent header/line injection
+const sanitizeIcsText = (val) =>
+  String(val ?? '')
+    .replace(/\r\n|\r|\n/g, ' ')
+    .replace(/([,;])/g, '\\$1')
+    .trim();
+
 // Helper: Build ICS calendar invitation content
 const buildIcsContent = ({ uid, date, startTime, endTime, summary, description, location, attendees }) => {
-  const dtstart = date.replace(/-/g, '') + 'T' + startTime.replace(':', '') + '00';
-  const dtend   = date.replace(/-/g, '') + 'T' + endTime.replace(':', '') + '00';
+  const dtstart = String(date || '').replace(/-/g, '') + 'T' + String(startTime || '').replace(':', '') + '00';
+  const dtend   = String(date || '').replace(/-/g, '') + 'T' + String(endTime || '').replace(':', '') + '00';
   const dtstamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  const safeUid = String(uid || 'booking').replace(/[^a-zA-Z0-9._-]/g, '');
+  const safeDescription = String(description || '').replace(/\r\n|\r|\n/g, '\\n');
   const attendeeLines = (attendees || [])
-    .map(email => `ATTENDEE;RSVP=TRUE;CN="${email}":mailto:${email}`)
+    .map(email => {
+      const clean = String(email || '').replace(/[\r\n"]/g, '').trim();
+      return clean ? `ATTENDEE;RSVP=TRUE;CN="${clean}":mailto:${clean}` : '';
+    })
+    .filter(Boolean)
     .join('\n');
 
   return `BEGIN:VCALENDAR
@@ -235,13 +261,13 @@ PRODID:-//SCOT FMS//${APP_NAME}//EN
 CALSCALE:GREGORIAN
 METHOD:REQUEST
 BEGIN:VEVENT
-UID:${uid}@scot.lk
+UID:${safeUid}@scot.lk
 DTSTAMP:${dtstamp}
 DTSTART;TZID=Asia/Colombo:${dtstart}
 DTEND;TZID=Asia/Colombo:${dtend}
-SUMMARY:${summary}
-DESCRIPTION:${description}
-LOCATION:${location}
+SUMMARY:${sanitizeIcsText(summary)}
+DESCRIPTION:${safeDescription}
+LOCATION:${sanitizeIcsText(location)}
 ORGANIZER;CN="${APP_NAME}":mailto:${process.env.GMAIL_USER || 'no-reply@scot.lk'}
 ${attendeeLines}
 STATUS:CONFIRMED
@@ -281,73 +307,75 @@ const newBookingHtml = (b) => {
     <h2 style="color:#e2e8f0;margin-top:0">Room Booking Confirmed</h2>
     <p style="color:#94a3b8;font-size:14px;margin-bottom:24px">A room booking has been confirmed. A Google Calendar invitation is attached to this email.</p>
     <div class="grid">
-      <div class="field"><div class="lbl">Building</div><div class="val">${b.building || '—'}</div></div>
-      <div class="field"><div class="lbl">Room</div><div class="val">${b.room}</div></div>
-      <div class="field"><div class="lbl">Date</div><div class="val">${b.date}</div></div>
-      <div class="field"><div class="lbl">Time</div><div class="val">${b.startTime} – ${b.endTime}</div></div>
-      <div class="field"><div class="lbl">Department</div><div class="val">${b.department || '—'}</div></div>
-      <div class="field"><div class="lbl">Seats</div><div class="val">${b.seats || 'Standard'}</div></div>
-      <div class="field"><div class="lbl">Booked By</div><div class="val">${b.userName || b.userEmail}</div></div>
+      <div class="field"><div class="lbl">Building</div><div class="val">${escapeHtml(b.building || '—')}</div></div>
+      <div class="field"><div class="lbl">Room</div><div class="val">${escapeHtml(b.room)}</div></div>
+      <div class="field"><div class="lbl">Date</div><div class="val">${escapeHtml(b.date)}</div></div>
+      <div class="field"><div class="lbl">Time</div><div class="val">${escapeHtml(b.startTime)} – ${escapeHtml(b.endTime)}</div></div>
+      <div class="field"><div class="lbl">Department</div><div class="val">${escapeHtml(b.department || '—')}</div></div>
+      <div class="field"><div class="lbl">Seats</div><div class="val">${escapeHtml(b.seats || 'Standard')}</div></div>
+      <div class="field"><div class="lbl">Booked By</div><div class="val">${escapeHtml(b.userName || b.userEmail)}</div></div>
       <div class="field"><div class="lbl">Status</div><div class="val"><span class="badge Approved">Approved</span></div></div>
     </div>
     <hr class="divider"/>
-    <div class="field"><div class="lbl">Book For</div><div class="val">${bookForStr}</div></div>
-    <div class="field"><div class="lbl">Supervisor</div><div class="val">${b.supervisorEmail || '—'}</div></div>
-    <div class="field"><div class="lbl">Reason</div><div class="val">${b.reason || '—'}</div></div>
-    ${b.specialRequirement ? `<div class="field"><div class="lbl">Special Requirement</div><div class="val" style="color:#fbbf24">${b.specialRequirement}</div></div>` : ''}
-    <div class="field"><div class="lbl">Booking ID</div><div class="val" style="font-family:monospace;font-size:12px;color:#64748b">${b.id}</div></div>
+    <div class="field"><div class="lbl">Book For</div><div class="val">${escapeHtml(bookForStr)}</div></div>
+    <div class="field"><div class="lbl">Supervisor</div><div class="val">${escapeHtml(b.supervisorEmail || '—')}</div></div>
+    <div class="field"><div class="lbl">Reason</div><div class="val">${escapeHtml(b.reason || '—')}</div></div>
+    ${b.specialRequirement ? `<div class="field"><div class="lbl">Special Requirement</div><div class="val" style="color:#fbbf24">${escapeHtml(b.specialRequirement)}</div></div>` : ''}
+    <div class="field"><div class="lbl">Booking ID</div><div class="val" style="font-family:monospace;font-size:12px;color:#64748b">${escapeHtml(b.id)}</div></div>
   `, 'Room Booking Confirmation');
 };
 
 const statusUpdateHtml = (b) => {
   const icon = b.status === 'Approved' ? '✅' : '❌';
+  const safeStatus = ['Pending', 'Approved', 'Rejected', 'Cancelled'].includes(b.status) ? b.status : 'Pending';
   const bookForStr = b.bookedFor || (Array.isArray(b.bookForEmails) ? b.bookForEmails.join(', ') : b.inPersonLecturers) || b.userEmail;
   return base(`
-    <h2 style="color:#e2e8f0;margin-top:0">${icon} Room Booking ${b.status}</h2>
+    <h2 style="color:#e2e8f0;margin-top:0">${icon} Room Booking ${escapeHtml(b.status)}</h2>
     <p style="color:#94a3b8;font-size:14px;margin-bottom:24px">
-      This room booking status has been updated to <strong style="color:#e2e8f0">${b.status}</strong>.
+      This room booking status has been updated to <strong style="color:#e2e8f0">${escapeHtml(b.status)}</strong>.
     </p>
     <div class="grid">
-      <div class="field"><div class="lbl">Room</div><div class="val">${b.room}</div></div>
-      <div class="field"><div class="lbl">Building</div><div class="val">${b.building || '—'}</div></div>
-      <div class="field"><div class="lbl">Date</div><div class="val">${b.date}</div></div>
-      <div class="field"><div class="lbl">Time</div><div class="val">${b.startTime} – ${b.endTime}</div></div>
-      <div class="field"><div class="lbl">Department</div><div class="val">${b.department || '—'}</div></div>
-      <div class="field"><div class="lbl">Seats</div><div class="val">${b.seats || 'Standard'}</div></div>
-      <div class="field"><div class="lbl">Book For</div><div class="val">${bookForStr}</div></div>
-      <div class="field"><div class="lbl">Status</div><div class="val"><span class="badge ${b.status}">${b.status}</span></div></div>
+      <div class="field"><div class="lbl">Room</div><div class="val">${escapeHtml(b.room)}</div></div>
+      <div class="field"><div class="lbl">Building</div><div class="val">${escapeHtml(b.building || '—')}</div></div>
+      <div class="field"><div class="lbl">Date</div><div class="val">${escapeHtml(b.date)}</div></div>
+      <div class="field"><div class="lbl">Time</div><div class="val">${escapeHtml(b.startTime)} – ${escapeHtml(b.endTime)}</div></div>
+      <div class="field"><div class="lbl">Department</div><div class="val">${escapeHtml(b.department || '—')}</div></div>
+      <div class="field"><div class="lbl">Seats</div><div class="val">${escapeHtml(b.seats || 'Standard')}</div></div>
+      <div class="field"><div class="lbl">Book For</div><div class="val">${escapeHtml(bookForStr)}</div></div>
+      <div class="field"><div class="lbl">Status</div><div class="val"><span class="badge ${safeStatus}">${escapeHtml(b.status)}</span></div></div>
     </div>
     <hr class="divider"/>
-    <div class="field"><div class="lbl">Reason</div><div class="val">${b.reason || '—'}</div></div>
-    ${b.specialRequirement ? `<div class="field"><div class="lbl">Special Requirement</div><div class="val" style="color:#fbbf24">${b.specialRequirement}</div></div>` : ''}
-    ${b.adminReason ? `<div class="field"><div class="lbl">Note / Reason</div><div class="val" style="color:#f87171">${b.adminReason}</div></div>` : ''}
-    <div class="field"><div class="lbl">Booking ID</div><div class="val" style="font-family:monospace;font-size:12px;color:#64748b">${b.id}</div></div>
+    <div class="field"><div class="lbl">Reason</div><div class="val">${escapeHtml(b.reason || '—')}</div></div>
+    ${b.specialRequirement ? `<div class="field"><div class="lbl">Special Requirement</div><div class="val" style="color:#fbbf24">${escapeHtml(b.specialRequirement)}</div></div>` : ''}
+    ${b.adminReason ? `<div class="field"><div class="lbl">Note / Reason</div><div class="val" style="color:#f87171">${escapeHtml(b.adminReason)}</div></div>` : ''}
+    <div class="field"><div class="lbl">Booking ID</div><div class="val" style="font-family:monospace;font-size:12px;color:#64748b">${escapeHtml(b.id)}</div></div>
   `, 'Room Booking Status Update');
 };
 
 const equipmentBookingHtml = (b, heading = 'Equipment Booking Confirmed') => {
+  const safeStatus = ['Pending', 'Approved', 'Rejected', 'Cancelled'].includes(b.status) ? b.status : 'Approved';
   const bookForStr = b.bookedFor || (Array.isArray(b.bookForEmails) ? b.bookForEmails.join(', ') : '') || b.userEmail;
   const itemsText = Array.isArray(b.items)
     ? b.items.map(i => `${i.name} (Qty: ${i.quantity || 1})`).join(', ')
     : (b.itemsSummary || '—');
   return base(`
-    <h2 style="color:#e2e8f0;margin-top:0">${heading}</h2>
+    <h2 style="color:#e2e8f0;margin-top:0">${escapeHtml(heading)}</h2>
     <p style="color:#94a3b8;font-size:14px;margin-bottom:24px">Equipment reservation details are listed below.</p>
     <div class="grid">
-      <div class="field"><div class="lbl">Equipment</div><div class="val">${itemsText}</div></div>
-      <div class="field"><div class="lbl">Location / Venue</div><div class="val">${b.location || '—'}</div></div>
-      <div class="field"><div class="lbl">Date</div><div class="val">${b.date}</div></div>
-      <div class="field"><div class="lbl">Time</div><div class="val">${b.startTime} – ${b.endTime}</div></div>
-      <div class="field"><div class="lbl">Department</div><div class="val">${b.department || '—'}</div></div>
-      <div class="field"><div class="lbl">Status</div><div class="val"><span class="badge ${b.status || 'Approved'}">${b.status || 'Approved'}</span></div></div>
+      <div class="field"><div class="lbl">Equipment</div><div class="val">${escapeHtml(itemsText)}</div></div>
+      <div class="field"><div class="lbl">Location / Venue</div><div class="val">${escapeHtml(b.location || '—')}</div></div>
+      <div class="field"><div class="lbl">Date</div><div class="val">${escapeHtml(b.date)}</div></div>
+      <div class="field"><div class="lbl">Time</div><div class="val">${escapeHtml(b.startTime)} – ${escapeHtml(b.endTime)}</div></div>
+      <div class="field"><div class="lbl">Department</div><div class="val">${escapeHtml(b.department || '—')}</div></div>
+      <div class="field"><div class="lbl">Status</div><div class="val"><span class="badge ${safeStatus}">${escapeHtml(b.status || 'Approved')}</span></div></div>
     </div>
     <hr class="divider"/>
-    <div class="field"><div class="lbl">Book For</div><div class="val">${bookForStr}</div></div>
-    <div class="field"><div class="lbl">Supervisor</div><div class="val">${b.supervisorEmail || '—'}</div></div>
-    <div class="field"><div class="lbl">Reason</div><div class="val">${b.reason || '—'}</div></div>
-    ${b.specialRequirement ? `<div class="field"><div class="lbl">Special Requirement</div><div class="val" style="color:#fbbf24">${b.specialRequirement}</div></div>` : ''}
-    ${b.adminReason ? `<div class="field"><div class="lbl">Admin Note</div><div class="val" style="color:#f87171">${b.adminReason}</div></div>` : ''}
-    <div class="field"><div class="lbl">Booking ID</div><div class="val" style="font-family:monospace;font-size:12px;color:#64748b">${b.id}</div></div>
+    <div class="field"><div class="lbl">Book For</div><div class="val">${escapeHtml(bookForStr)}</div></div>
+    <div class="field"><div class="lbl">Supervisor</div><div class="val">${escapeHtml(b.supervisorEmail || '—')}</div></div>
+    <div class="field"><div class="lbl">Reason</div><div class="val">${escapeHtml(b.reason || '—')}</div></div>
+    ${b.specialRequirement ? `<div class="field"><div class="lbl">Special Requirement</div><div class="val" style="color:#fbbf24">${escapeHtml(b.specialRequirement)}</div></div>` : ''}
+    ${b.adminReason ? `<div class="field"><div class="lbl">Admin Note</div><div class="val" style="color:#f87171">${escapeHtml(b.adminReason)}</div></div>` : ''}
+    <div class="field"><div class="lbl">Booking ID</div><div class="val" style="font-family:monospace;font-size:12px;color:#64748b">${escapeHtml(b.id)}</div></div>
   `, 'Equipment Booking Notification');
 };
 
@@ -1075,6 +1103,66 @@ app.post('/api/equipment-bookings/new', async (req, res) => {
     const minDateStr = minDate.toISOString().slice(0, 10);
     if (booking.date < minDateStr) {
       return res.status(400).json({ ok: false, error: 'Equipment must be booked at least 3 days in advance.' });
+    }
+
+    // Validate same-day equipment stock availability when Firebase Admin is configured
+    if (hasFirebaseAdmin()) {
+      try {
+        const db = getFirestore();
+        const [catalogSnap, dayBookingsSnap] = await Promise.all([
+          db.collection('equipment_catalog').get(),
+          db.collection('equipment_bookings').where('date', '==', booking.date).get(),
+        ]);
+
+        const stockById = new Map();
+        const stockByName = new Map();
+        catalogSnap.docs.forEach((doc) => {
+          const d = doc.data() || {};
+          const qty = Number(d.totalQty);
+          if (!Number.isNaN(qty) && qty >= 0) {
+            stockById.set(doc.id, qty);
+            if (d.name) stockByName.set(String(d.name).toLowerCase(), qty);
+          }
+        });
+
+        const bookedById = new Map();
+        const bookedByName = new Map();
+        dayBookingsSnap.docs.forEach((doc) => {
+          if (doc.id === booking.id) return;
+          const d = doc.data() || {};
+          if (d.status === 'Rejected' || d.status === 'Cancelled') return;
+          (Array.isArray(d.items) ? d.items : []).forEach((it) => {
+            const q = Number(it.quantity || 1);
+            if (it.id) bookedById.set(it.id, (bookedById.get(it.id) || 0) + q);
+            if (it.name) {
+              const key = String(it.name).toLowerCase();
+              bookedByName.set(key, (bookedByName.get(key) || 0) + q);
+            }
+          });
+        });
+
+        for (const item of booking.items) {
+          const reqQty = Number(item.quantity || 1);
+          const nameKey = String(item.name || '').toLowerCase();
+          const stock =
+            (item.id && stockById.has(item.id) ? stockById.get(item.id) : null) ??
+            (nameKey && stockByName.has(nameKey) ? stockByName.get(nameKey) : null);
+
+          if (stock !== null) {
+            const alreadyUsed =
+              (item.id && bookedById.has(item.id) ? bookedById.get(item.id) : 0) ||
+              (nameKey && bookedByName.has(nameKey) ? bookedByName.get(nameKey) : 0);
+            if (alreadyUsed + reqQty > stock) {
+              return res.status(409).json({
+                ok: false,
+                error: `${item.name || 'Equipment'} exceeds available daily stock (${stock}) on ${booking.date}.`,
+              });
+            }
+          }
+        }
+      } catch (stockErr) {
+        console.warn('[EQUIPMENT STOCK CHECK] Skipped:', stockErr.message);
+      }
     }
 
     // 1. Append to EquipmentBookings sheet tab (non-blocking if tab doesn't exist yet)

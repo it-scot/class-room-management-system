@@ -2,8 +2,8 @@
 // All Firestore CRUD operations for bookings.
 
 import {
-  collection, doc, setDoc, getDocs, getDoc,
-  updateDoc, deleteDoc, query, where, orderBy, limit,
+  collection, doc, getDocs, getDoc,
+  updateDoc, deleteDoc, query, where, orderBy,
   serverTimestamp, onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';

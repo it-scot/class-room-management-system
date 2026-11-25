@@ -50,7 +50,7 @@ const REMINDER_WINDOW_MS = 3 * 60 * 60 * 1000; // 3 hours before required time
 const getTodayStr = () => format(new Date(), 'yyyy-MM-dd');
 
 const parseBookingDateTime = (dateStr, timeStr) => {
-  if (!dateStr || !timeStr) return null;
+  if (typeof dateStr !== 'string' || typeof timeStr !== 'string') return null;
   const [y, m, d] = dateStr.split('-').map(Number);
   const [hh, mm] = timeStr.split(':').map(Number);
   if (!y || !m || !d || isNaN(hh) || isNaN(mm)) return null;
@@ -66,7 +66,47 @@ const formatCountdown = (mins) => {
   return `Starts in ${h}h ${m}m`;
 };
 
-export default function App() {
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, message: error?.message || 'Unexpected display error' };
+  }
+
+  componentDidCatch(error) {
+    console.error('[SCOT Mobile App ErrorBoundary]', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: COLORS.surface, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, padding: 22, maxWidth: 360, width: '100%', gap: 10, alignItems: 'center' }}>
+            <Ionicons name="warning-outline" size={32} color={COLORS.amber} />
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800', textAlign: 'center' }}>
+              Schedule View Interrupted
+            </Text>
+            <Text style={{ color: COLORS.textSecondary, fontSize: 12, textAlign: 'center' }}>
+              {this.state.message}
+            </Text>
+            <TouchableOpacity
+              onPress={() => this.setState({ hasError: false, message: '' })}
+              style={{ backgroundColor: COLORS.primaryDark, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12, marginTop: 4 }}
+            >
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>Reload Schedule</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function ScotMobileApp() {
   const [portalUrl, setPortalUrl] = useState(DEFAULT_PORTAL_URL);
   const [apiKey, setApiKey] = useState(DEFAULT_GANTT_API_KEY);
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -420,9 +460,12 @@ export default function App() {
     let liveNow = 0;
     if (isToday) {
       dayRooms.forEach((b) => {
+        if (!b.startTime || !b.endTime) return;
         const [sh, sm] = b.startTime.split(':').map(Number);
         const [eh, em] = b.endTime.split(':').map(Number);
-        if (nowMin >= sh * 60 + sm && nowMin < eh * 60 + em) liveNow++;
+        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+          if (nowMin >= sh * 60 + sm && nowMin < eh * 60 + em) liveNow++;
+        }
       });
     }
 
@@ -781,6 +824,14 @@ export default function App() {
   }
 
   return phoneShell;
+}
+
+export default function App() {
+  return (
+    <AppErrorBoundary>
+      <ScotMobileApp />
+    </AppErrorBoundary>
+  );
 }
 
 const styles = StyleSheet.create({

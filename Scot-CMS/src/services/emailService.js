@@ -22,7 +22,7 @@ const postToApi = async (url, payload, logLabel) => {
     clearTimeout(timeoutId);
     const msg = err.name === 'AbortError' ? 'Request Timeout' : err.message;
     console.error(`[emailService] Failed (${logLabel}):`, msg);
-    throw new Error(msg);
+    throw new Error(msg, { cause: err });
   }
 };
 

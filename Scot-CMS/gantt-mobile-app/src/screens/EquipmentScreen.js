@@ -19,6 +19,16 @@ const EquipmentScreen = ({
   onMarkIssued,
 }) => {
   const [scope, setScope] = useState('upcoming'); // 'day' | 'upcoming' | 'all'
+  const [exportErr, setExportErr] = useState('');
+
+  const handleSafeExport = async (fn) => {
+    setExportErr('');
+    try {
+      await fn();
+    } catch (err) {
+      setExportErr(err?.message || 'Could not generate equipment report.');
+    }
+  };
 
   const filtered = useMemo(() => {
     const list = equipmentBookings || [];
@@ -68,14 +78,14 @@ const EquipmentScreen = ({
 
         <View style={styles.exportBtns}>
           <TouchableOpacity
-            onPress={() => exportEquipmentPdf(filtered, scopeLabel)}
+            onPress={() => handleSafeExport(() => exportEquipmentPdf(filtered, scopeLabel))}
             style={styles.pdfBtn}
           >
             <Ionicons name="document-text-outline" size={14} color="#67e8f9" />
             <Text style={styles.pdfText}>PDF</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => exportEquipmentExcelSheet(filtered, scopeLabel)}
+            onPress={() => handleSafeExport(() => exportEquipmentExcelSheet(filtered, scopeLabel))}
             style={styles.xlsBtn}
           >
             <Ionicons name="grid-outline" size={14} color="#6ee7b7" />
@@ -83,6 +93,12 @@ const EquipmentScreen = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {!!exportErr && (
+        <View style={styles.errBox}>
+          <Text style={styles.errText}>{exportErr}</Text>
+        </View>
+      )}
 
       {/* Equipment Item Totals */}
       {itemTotals.length > 0 && (
@@ -321,6 +337,12 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   emptySub: { color: COLORS.textSecondary, fontSize: 12, textAlign: 'center' },
+  errBox: {
+    backgroundColor: COLORS.redSoft,
+    borderRadius: 12,
+    padding: 10,
+  },
+  errText: { color: '#fecaca', fontSize: 12 },
 });
 
 export default EquipmentScreen;

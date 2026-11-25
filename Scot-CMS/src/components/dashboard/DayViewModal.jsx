@@ -1,7 +1,7 @@
 // src/components/dashboard/DayViewModal.jsx
 import React, { useState, useMemo } from 'react';
 import Modal from '../common/Modal';
-import { TIME_SLOTS, BUILDINGS, BOOKING_STATUS } from '../../utils/constants';
+import { BUILDINGS, BOOKING_STATUS } from '../../utils/constants';
 import { formatDate, isWithinOneHourBuffer } from '../../utils/dateHelpers';
 import Badge from '../common/Badge';
 import { CheckCircleIcon, XCircleIcon, ClockIcon, UserIcon, AcademicCapIcon } from '@heroicons/react/24/outline';

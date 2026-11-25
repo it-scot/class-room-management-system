@@ -37,7 +37,7 @@ const Step3Details = ({ formData, update, errors, setErrors, onNext, onBack }) =
 
   const clearErr = (field) => setErrors(e => { const n = { ...e }; delete n[field]; return n; });
 
-  const rooms = formData.rooms || [];
+  const rooms = useMemo(() => formData.rooms || [], [formData.rooms]);
 
   // Resolve detailed metadata for all selected rooms
   const selectedRoomInfos = useMemo(

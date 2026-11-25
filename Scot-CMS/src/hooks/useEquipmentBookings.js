@@ -29,30 +29,30 @@ export const useAllEquipmentBookings = () => {
 export const useEquipmentBookings = (all = false) => {
   const { user, isAdmin } = useAuth();
   const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadedKey, setLoadedKey] = useState(null);
+
+  const shouldFetchAll = all || isAdmin;
+  const canSubscribe = Boolean(user) || all;
+  const subKey = canSubscribe ? `${user?.uid || 'anon'}:${shouldFetchAll ? 'all' : 'own'}` : null;
 
   useEffect(() => {
-    if (!user && !all) {
-      setBookings([]);
-      setLoading(false);
-      return;
-    }
+    if (!canSubscribe || !subKey) return undefined;
 
-    setLoading(true);
-    const shouldFetchAll = all || isAdmin;
+    const handleData = (data) => {
+      setBookings(data);
+      setLoadedKey(subKey);
+    };
+    const handleErr = () => setLoadedKey(subKey);
+
     const unsub = shouldFetchAll
-      ? subscribeToAllEquipmentBookings(
-          (data) => { setBookings(data); setLoading(false); },
-          () => setLoading(false)
-        )
-      : subscribeToUserEquipmentBookings(
-          user.uid,
-          (data) => { setBookings(data); setLoading(false); },
-          () => setLoading(false)
-        );
+      ? subscribeToAllEquipmentBookings(handleData, handleErr)
+      : subscribeToUserEquipmentBookings(user.uid, handleData, handleErr);
 
     return () => unsub();
-  }, [user, isAdmin, all]);
+  }, [user, canSubscribe, shouldFetchAll, subKey]);
 
-  return { bookings, loading };
+  return {
+    bookings: canSubscribe ? bookings : [],
+    loading: canSubscribe && loadedKey !== subKey,
+  };
 };

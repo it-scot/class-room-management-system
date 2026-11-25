@@ -9,7 +9,7 @@
 //      3) Classic Full Portal Grid (optional fallback)
 //  - One-tap Daily PDF download
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { format, addDays, parseISO } from 'date-fns';
 import { BUILDINGS, BOOKING_STATUS } from '../../utils/constants';
 import { formatDate, todayStr } from '../../utils/dateHelpers';
@@ -77,14 +77,15 @@ const MobileSecuritySchedule = ({ bookings = [], selectedDate, onDateChange }) =
   const [now, setNow] = useState(() => new Date());
 
   // Local staff checklist ("Opened / Ready") stored per day in localStorage
-  const [readyIds, setReadyIds] = useState(() => {
+  const [readyByDate, setReadyByDate] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(READY_STORAGE_KEY) || '{}');
-      return saved[selectedDate] || [];
+      return JSON.parse(localStorage.getItem(READY_STORAGE_KEY) || '{}');
     } catch {
-      return [];
+      return {};
     }
   });
+
+  const readyIds = readyByDate[selectedDate] || [];
 
   // Update clock every 60s so LIVE NOW / OPENS SOON indicators stay accurate
   useEffect(() => {
@@ -92,35 +93,25 @@ const MobileSecuritySchedule = ({ bookings = [], selectedDate, onDateChange }) =
     return () => clearInterval(id);
   }, []);
 
-  // Load ready checklist when selectedDate changes
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(READY_STORAGE_KEY) || '{}');
-      setReadyIds(saved[selectedDate] || []);
-    } catch {
-      setReadyIds([]);
-    }
-  }, [selectedDate]);
-
   const toggleReady = (bookingId, e) => {
     if (e) e.stopPropagation();
-    setReadyIds((prev) => {
-      const next = prev.includes(bookingId)
-        ? prev.filter(id => id !== bookingId)
-        : [...prev, bookingId];
+    setReadyByDate((prev) => {
+      const current = prev[selectedDate] || [];
+      const nextDay = current.includes(bookingId)
+        ? current.filter(id => id !== bookingId)
+        : [...current, bookingId];
+      const nextAll = { ...prev, [selectedDate]: nextDay };
       try {
-        const saved = JSON.parse(localStorage.getItem(READY_STORAGE_KEY) || '{}');
-        saved[selectedDate] = next;
-        localStorage.setItem(READY_STORAGE_KEY, JSON.stringify(saved));
+        localStorage.setItem(READY_STORAGE_KEY, JSON.stringify(nextAll));
       } catch { /* ignore */ }
-      return next;
+      return nextAll;
     });
   };
 
   const isViewingToday = selectedDate === todayStr();
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-  const getSessionStatus = (b) => {
+  const getSessionStatus = useCallback((b) => {
     if (!isViewingToday) {
       return selectedDate > todayStr()
         ? { key: 'upcoming', label: 'Scheduled', badge: 'bg-sky-500/20 text-sky-300 border-sky-500/30' }
@@ -139,7 +130,7 @@ const MobileSecuritySchedule = ({ bookings = [], selectedDate, onDateChange }) =
       return { key: 'upcoming', label: 'UPCOMING', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
     }
     return { key: 'ended', label: 'DONE', badge: 'bg-slate-600/25 text-slate-400 border-white/10' };
-  };
+  }, [isViewingToday, selectedDate, nowMinutes]);
 
   // All active bookings for selectedDate + building filter
   const dayBookings = useMemo(() => {
@@ -174,7 +165,7 @@ const MobileSecuritySchedule = ({ bookings = [], selectedDate, onDateChange }) =
       liveCount,
       nextBooking,
     };
-  }, [dayBookings, nowMinutes, isViewingToday]);
+  }, [dayBookings, getSessionStatus]);
 
   // Grouped by Room for Cards ("By Room") view
   const groupedByRoom = useMemo(() => {

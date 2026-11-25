@@ -77,6 +77,16 @@ export const BookingDetailModal = ({ booking, onClose }) => {
 
 /* ── Downloads Bottom Sheet ──────────────────────────────────────────────── */
 export const DownloadsModal = ({ visible, onClose, selectedDate, bookings, equipmentBookings }) => {
+  const [exportErr, setExportErr] = useState('');
+  const [exportingTitle, setExportingTitle] = useState('');
+
+  useEffect(() => {
+    if (visible) {
+      setExportErr('');
+      setExportingTitle('');
+    }
+  }, [visible]);
+
   const actions = [
     {
       title: 'Daily Classroom Schedule (PDF)',
@@ -126,14 +136,29 @@ export const DownloadsModal = ({ visible, onClose, selectedDate, bookings, equip
             </TouchableOpacity>
           </View>
 
+          {!!exportErr && (
+            <View style={styles.errBox}>
+              <Text style={styles.errText}>{exportErr}</Text>
+            </View>
+          )}
+
           <View style={{ gap: 9 }}>
             {actions.map((a) => (
               <TouchableOpacity
                 key={a.title}
+                disabled={Boolean(exportingTitle)}
                 activeOpacity={0.8}
                 onPress={async () => {
-                  await a.run();
-                  onClose();
+                  setExportErr('');
+                  setExportingTitle(a.title);
+                  try {
+                    await a.run();
+                    onClose();
+                  } catch (err) {
+                    setExportErr(err?.message || 'Failed to generate export file. Please try again.');
+                  } finally {
+                    setExportingTitle('');
+                  }
                 }}
                 style={styles.actionRow}
               >
@@ -144,7 +169,11 @@ export const DownloadsModal = ({ visible, onClose, selectedDate, bookings, equip
                   <Text style={styles.actionTitle}>{a.title}</Text>
                   <Text style={styles.actionDesc}>{a.desc}</Text>
                 </View>
-                <Ionicons name="download-outline" size={17} color={COLORS.textMuted} />
+                {exportingTitle === a.title ? (
+                  <ActivityIndicator size="small" color={a.color} />
+                ) : (
+                  <Ionicons name="download-outline" size={17} color={COLORS.textMuted} />
+                )}
               </TouchableOpacity>
             ))}
           </View>

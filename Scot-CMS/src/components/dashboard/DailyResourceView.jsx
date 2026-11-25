@@ -1,7 +1,7 @@
 // src/components/dashboard/DailyResourceView.jsx
 // Interactive daily Gantt timeline + daily PDF download.
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { format, addDays, parseISO } from 'date-fns';
 import { BUILDINGS, BOOKING_STATUS, ROOM_COLORS } from '../../utils/constants';
 import { formatDate } from '../../utils/dateHelpers';
@@ -34,19 +34,21 @@ const roomMatches = (bookingRoom, columnRoom) => {
 };
 
 const DailyResourceView = ({ date, bookings, onDateChange, showPdfButton = true }) => {
-  const [selectedBooking, setSelectedBooking] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(
-    typeof date === 'string' ? date : format(date || new Date(), 'yyyy-MM-dd')
-  );
+  const propDateStr = date
+    ? (typeof date === 'string' ? date : format(date, 'yyyy-MM-dd'))
+    : format(new Date(), 'yyyy-MM-dd');
 
-  useEffect(() => {
-    if (date) {
-      setSelectedDate(typeof date === 'string' ? date : format(date, 'yyyy-MM-dd'));
-    }
-  }, [date]);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [localSelection, setLocalSelection] = useState({
+    propDate: propDateStr,
+    date: propDateStr,
+  });
+
+  const selectedDate =
+    localSelection.propDate === propDateStr ? localSelection.date : propDateStr;
 
   const updateDate = (newDateStr) => {
-    setSelectedDate(newDateStr);
+    setLocalSelection({ propDate: propDateStr, date: newDateStr });
     if (onDateChange) onDateChange(newDateStr);
   };
 

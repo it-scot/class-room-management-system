@@ -5,9 +5,10 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
-import { AuthProvider } from './store/AuthContext';
+import { AuthProvider, useAuth } from './store/AuthContext';
 import ProtectedRoute   from './components/layout/ProtectedRoute';
 import Navbar           from './components/layout/Navbar';
+import Spinner          from './components/common/Spinner';
 
 import LoginPage         from './pages/LoginPage';
 import DashboardPage     from './pages/DashboardPage';
@@ -43,12 +44,21 @@ const Layout = ({ children }) => {
 };
 
 const AdminRoute = () => {
-  const [isAuthenticated, setIsAuthenticated] = React.useState(
-    sessionStorage.getItem('scot_admin_auth') === 'true'
+  const { isAdmin, loading } = useAuth();
+  const [isSessionAuth, setIsSessionAuth] = React.useState(
+    () => sessionStorage.getItem('scot_admin_auth') === 'true'
   );
 
-  if (!isAuthenticated) {
-    return <AdminLoginPage onLoginSuccess={() => setIsAuthenticated(true)} />;
+  if (loading && !isSessionAuth) {
+    return (
+      <div className="min-h-screen bg-surface-900 flex items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (!isAdmin && !isSessionAuth) {
+    return <AdminLoginPage onLoginSuccess={() => setIsSessionAuth(true)} />;
   }
 
   return (
